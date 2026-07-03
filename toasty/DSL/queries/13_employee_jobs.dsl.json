@@ -1,0 +1,34 @@
+{
+  "_description": "Employee job assignments and wage overrides",
+  "_csv_source": "Derived from labor_v1_employees and labor_v1_jobs",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_employees.json",
+      "alias": "emp",
+      "explode": "jobReferences"
+    },
+    "joins": [
+      {
+        "source": {
+          "source_file": "labor_v1_jobs.json",
+          "alias": "job"
+        },
+        "on": {
+          "left": "jobReferences.guid",
+          "right": "job.guid"
+        },
+        "join_type": "left",
+        "skip_nulls": true
+      }
+    ],
+    "select": [
+      {"expr": "emp.guid", "alias": "employee_guid"},
+      {"expr": "emp.firstName", "alias": "first_name"},
+      {"expr": "emp.lastName", "alias": "last_name"},
+      {"expr": "emp.email", "alias": "email"},
+      {"expr": "jobReferences.guid", "alias": "job_guid"},
+      {"expr": "job.title", "alias": "job_title"},
+      {"expr": "job.tipped", "alias": "job_is_tipped"}
+    ]
+  }
+}

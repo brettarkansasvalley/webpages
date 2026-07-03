@@ -1,0 +1,23 @@
+{
+  "_description": "Replicate employees.csv - List all employees with their details and job titles",
+  "_csv_source": "employees.csv",
+  "_csv_columns": "guid,v2EmployeeGuid,firstName,lastName,chosenName,email,phoneNumber,jobTitles,deleted,createdDate,modifiedDate",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_employees.json",
+      "alias": "emp"
+    },
+    "select": [
+      {"expr": "emp.guid", "alias": "guid"},
+      {"expr": "emp.v2EmployeeGuid", "alias": "v2EmployeeGuid"},
+      {"expr": "emp.firstName", "alias": "firstName"},
+      {"expr": "emp.lastName", "alias": "lastName"},
+      {"expr": "emp.chosenName", "alias": "chosenName"},
+      {"expr": "emp.email", "alias": "email"},
+      {"expr": "emp.phoneNumber", "alias": "phoneNumber"},
+      {"expr": "emp.deleted", "alias": "deleted"},
+      {"expr": "emp.createdDate", "alias": "createdDate"},
+      {"expr": "emp.modifiedDate", "alias": "modifiedDate"}
+    ]
+  }
+}

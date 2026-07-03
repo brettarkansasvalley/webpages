@@ -1,0 +1,856 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Server Tips</h2>
+<style>
+  /* Compact, wrap-friendly tables */
+  .table-wrap table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+  .table-wrap th, .table-wrap td { padding: 6px; vertical-align: top; white-space: normal; word-break: break-word; }
+  /* Summary table widths */
+  .table-wrap thead tr th:nth-child(1) { width: 18%; }
+  .table-wrap thead tr th:nth-child(2) { width: 16%; }
+  .table-wrap thead tr th:nth-child(3),
+  .table-wrap thead tr th:nth-child(4),
+  .table-wrap thead tr th:nth-child(5),
+  .table-wrap thead tr th:nth-child(6),
+  .table-wrap thead tr th:nth-child(7) { width: 13%; }
+  /* Comparison table: more columns, so slightly tighter */
+  .table-wrap.compare thead tr th:nth-child(1) { width: 20%; }
+  .table-wrap.compare thead tr th:nth-child(2),
+  .table-wrap.compare thead tr th:nth-child(3),
+  .table-wrap.compare thead tr th:nth-child(4),
+  .table-wrap.compare thead tr th:nth-child(5),
+  .table-wrap.compare thead tr th:nth-child(6) { width: 10%; }
+  .table-wrap.compare thead tr th:nth-child(7) { width: 28%; }
+  .table-wrap.compare thead tr th:nth-child(8) { width: 12%; }
+  /* Inline pills/notes wrap */
+  .inline-stats div { margin: 0; line-height: 1.2; }
+  .inline-stats strong { white-space: nowrap; }
+  /* Buttons compact */
+  .table-wrap button { padding: 4px 8px; }
+  /* Suggested bucket status styles */
+  .suggest-bucket { position: relative; border: 1px solid #ccc; background:#f8f8f8; }
+  .suggest-bucket.selected { border-width: 3px; border-color: #000; }
+  .suggest-bucket.status-unpushed { border-color:#999; background:#f8f8f8; color:#333; }
+  .suggest-bucket.status-pushed { border-color:#e65100; background:#fff3e0; color:#e65100; }
+  .suggest-bucket.status-committed { border-color:#2e7d32; background:#e8f5e9; color:#2e7d32; }
+  .suggest-legend { font-size:12px; color:#555; margin-top:6px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .legend-pill { display:inline-block; padding:2px 6px; border-radius:4px; border:1px solid transparent; }
+  .legend-unpushed { border-color:#999; background:#f8f8f8; color:#333; }
+  .legend-pushed { border-color:#e65100; background:#fff3e0; color:#e65100; }
+  .legend-committed { border-color:#2e7d32; background:#e8f5e9; color:#2e7d32; }
+</style>
+
+<form method="post" action="/server-tips" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+  <label>
+    Worker:
+    <select name="worker_name" required style="padding:8px; min-width:200px;">
+      <option value="" disabled {% if not result or not result.worker_name %}selected{% endif %}>Select worker</option>
+      {% for w in workers %}
+        <option value="{{ w }}" {% if result and result.worker_name == w %}selected{% endif %}>{{ w }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Date:
+    <input type="date" name="date" required style="padding:8px; min-width:160px;" value="{{ date_str or '' }}" />
+  </label>
+  {% if result %}
+    <input type="hidden" name="bucket" value="{{ result.bucket or result.auto_bucket or '' }}" />
+  {% endif %}
+  <div class="form-grid" style="width:100%;">
+    <div class="card">
+      <h3>Main Figures</h3>
+      <div class="row">
+        <label>Cash Tips
+          <input type="number" step="0.01" name="cashtips" value="{{ defaults.cashtips or 0 }}" style="padding:6px; width:140px;">
+        </label>
+        <label>Non-Cash tips
+          <input type="number" step="0.01" name="creditcardtip" value="{{ defaults.creditcardtip or 0 }}" style="padding:6px; width:140px;">
+        </label>
+        <label>Gratuity
+          <input type="number" step="0.01" name="gratuity" value="{{ defaults.gratuity or 0 }}" style="padding:6px; width:140px;">
+        </label>
+        <label>Net Sales
+          <input type="number" step="0.01" name="netsales" value="{{ defaults.netsales or 0 }}" style="padding:6px; width:140px;">
+        </label>
+      </div>
+      {% if result and result.pushed %}
+      <div class="inline-stats" style="margin-top:6px; font-size:12px; color:#666;">
+        <em>Already pushed for {{ result.worker_name }} on {{ date_str }} in {{ result.filter_bucket_display or result.bucket }}:</em>
+        <div>Bartender: <strong>{{ '%.2f'|format(result.pushed.Bartender or 0) }}</strong></div>
+        <div>Busser: <strong>{{ '%.2f'|format(result.pushed.Busser or 0) }}</strong></div>
+        <div>Expo: <strong>{{ '%.2f'|format(result.pushed.Expo or 0) }}</strong></div>
+        <div>Runner: <strong>{{ '%.2f'|format(result.pushed.Runner or 0) }}</strong></div>
+        <div>Total: <strong>{{ '%.2f'|format(result.pushed.Total or 0) }}</strong></div>
+      </div>
+      {% if result.committed %}
+      <div class="inline-stats" style="margin-top:4px; font-size:12px; color:#2e7d32;">
+        <em>Committed via payouts:</em>
+        <div>Bartender: <strong>{{ '%.2f'|format(result.committed.Bartender or 0) }}</strong></div>
+        <div>Busser: <strong>{{ '%.2f'|format(result.committed.Busser or 0) }}</strong></div>
+        <div>Expo: <strong>{{ '%.2f'|format(result.committed.Expo or 0) }}</strong></div>
+        <div>Runner: <strong>{{ '%.2f'|format(result.committed.Runner or 0) }}</strong></div>
+        <div>Total: <strong>{{ '%.2f'|format(result.committed.Total or 0) }}</strong></div>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>Add Tips for Payout</h3>
+      <div class="row">
+        <label>Bartips
+          <input type="number" step="0.01" name="bartips" value="{{ defaults.bartips or 0 }}" style="padding:6px; width:140px;">
+        </label>
+        <label>Bussertips
+          <input type="number" step="0.01" name="servertips" value="{{ defaults.servertips or 0 }}" style="padding:6px; width:140px;">
+        </label>
+        <label>Expotips
+          <input type="number" step="0.01" name="expotips" value="{{ defaults.expotips or 0 }}" style="padding:6px; width:140px;">
+        </label>
+        <label>Runnertips
+          <input type="number" step="0.01" name="runnertips" value="{{ defaults.runnertips or 0 }}" style="padding:6px; width:140px;">
+        </label>
+      </div>
+      {% if result and result.pushed %}
+      <div class="inline-stats" style="margin-top:6px; font-size:12px; color:#666;">
+        <em>Pushed so far (unpaid):</em>
+        <div>Bartender: <strong>{{ '%.2f'|format(result.pushed.Bartender or 0) }}</strong></div>
+        <div>Busser: <strong>{{ '%.2f'|format(result.pushed.Busser or 0) }}</strong></div>
+        <div>Expo: <strong>{{ '%.2f'|format(result.pushed.Expo or 0) }}</strong></div>
+        <div>Runner: <strong>{{ '%.2f'|format(result.pushed.Runner or 0) }}</strong></div>
+        <div>Total: <strong>{{ '%.2f'|format(result.pushed.Total or 0) }}</strong></div>
+      </div>
+      {% if result.committed %}
+      <div style="margin-top:4px; font-size:12px; color:#2e7d32;">
+        <em>Committed via payouts:</em>
+        <span style="margin-left:6px;">Bartender: <strong>{{ '%.2f'|format(result.committed.Bartender or 0) }}</strong></span>
+        <span style="margin-left:6px;">Busser: <strong>{{ '%.2f'|format(result.committed.Busser or 0) }}</strong></span>
+        <span style="margin-left:6px;">Expo: <strong>{{ '%.2f'|format(result.committed.Expo or 0) }}</strong></span>
+        <span style="margin-left:6px;">Runner: <strong>{{ '%.2f'|format(result.committed.Runner or 0) }}</strong></span>
+        <span style="margin-left:6px;">Total: <strong>{{ '%.2f'|format(result.committed.Total or 0) }}</strong></span>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+  {% if result %}
+  <div class="card" style="width:100%;">
+    <h3>Locations for {{ result.worker_name }} on {{ date_str }}</h3>
+    {% if result.detected_job_titles %}
+      <p><strong>Job titles:</strong> {{ result.detected_job_titles | join(', ') }}</p>
+    {% endif %}
+    {% if result.suggested_buckets and result.suggested_buckets|length > 0 %}
+      <div style="margin-top:6px;"><strong>Suggested buckets:</strong>
+        {% for bid, bname in result.suggested_buckets %}
+          {% set _is_sel = (result and (result.bucket == bid or result.auto_bucket == bid)) %}
+          <button type="button" class="suggest-bucket{% if _is_sel %} selected{% endif %}" data-bid="{{ bid }}" style="margin-right:8px; padding:4px 8px;">{{ bname }}</button>
+        {% endfor %}
+        {% if result.auto_bucket %}
+          <em>(auto-selected)</em>
+        {% endif %}
+        <div class="suggest-legend">
+          <span class="legend-pill legend-unpushed">Unpushed</span>
+          <span class="legend-pill legend-pushed">Pushed (unpaid)</span>
+          <span class="legend-pill legend-committed">Committed</span>
+        </div>
+      </div>
+    {% else %}
+      <div style="margin-top:6px;"><strong>No shift-based suggestions found. Choose location:</strong>
+        {% if result and result.fallback_buckets and result.fallback_buckets|length > 0 %}
+          {% for bid, bname in result.fallback_buckets %}
+            {% set _is_sel = (result and (result.bucket == bid or result.auto_bucket == bid)) %}
+            <button type="button" class="suggest-bucket{% if _is_sel %} selected{% endif %}" data-bid="{{ bid }}" style="margin-right:8px; padding:4px 8px;">{{ bname }}</button>
+          {% endfor %}
+        {% else %}
+          {% for bid, bname in buckets %}
+            {% set _is_sel = (result and (result.bucket == bid or result.auto_bucket == bid)) %}
+            <button type="button" class="suggest-bucket{% if _is_sel %} selected{% endif %}" data-bid="{{ bid }}" style="margin-right:8px; padding:4px 8px;">{{ bname }}</button>
+          {% endfor %}
+        {% endif %}
+        <div class="suggest-legend">
+          <span class="legend-pill legend-unpushed">Unpushed</span>
+          <span class="legend-pill legend-pushed">Pushed (unpaid)</span>
+          <span class="legend-pill legend-committed">Committed</span>
+        </div>
+      </div>
+    {% endif %}
+    {# Removed 'All Locations' button to avoid submitting empty bucket #}
+    <p style="margin-top:6px; color:#444;">Last selected bucket: <strong>{{ result.filter_bucket_display or (result.bucket if result.bucket else 'All Locations') }}</strong></p>
+  </div>
+  {% endif %}
+
+  <div style="display:flex; gap:10px;">
+    <button type="submit" name="action" value="fetch_toast" style="padding:8px 12px;">Fetch from Toast</button>
+    <button type="submit" name="action" value="save" style="padding:8px 12px;" {% if not result or not (result.bucket or result.auto_bucket) %}disabled title="Fetch and choose a location first"{% endif %}>Save</button>
+    <button type="submit" name="action" value="push_to_payouts" style="padding:8px 12px; background:#0a0; color:#fff;" title="Record these tip pools into payouts for this date and bucket, then view Payouts" {% if not result or not (result.bucket or result.auto_bucket) %}disabled title="Fetch and choose a location first"{% endif %}>Push to Payouts</button>
+    <button type="submit" name="action" value="undo_payouts" style="padding:8px 12px; background:#b71c1c; color:#fff;" title="Remove unpaid payouts for this worker/date/location" {% if not result or not (result.bucket or result.auto_bucket) %}disabled title="Fetch and choose a location first"{% endif %} onclick="return confirm('Undo unpaid payouts for this worker, date, and location?');">Undo Payouts</button>
+  </div>
+</form>
+
+  <script>
+  (function(){
+    document.addEventListener('DOMContentLoaded', () => {
+    const form = document.querySelector('form[action="/server-tips"]');
+    if (!form) return;
+    const bucketSelect = form.querySelector('select[name="bucket"]');
+    const suggestBtns = form.querySelectorAll('button.suggest-bucket');
+    const workerSel = form.querySelector('select[name="worker_name"]');
+    const dateInput = form.querySelector('input[name="date"]');
+    // Optional: comparison rows JSON to allow instant client-side preview updates
+    let compareRows = [];
+    try {
+      const compareJsonEl = document.getElementById('compare-rows-json');
+      if (compareJsonEl && compareJsonEl.textContent) {
+        compareRows = JSON.parse(compareJsonEl.textContent || '[]') || [];
+      }
+    } catch (e) { compareRows = []; }
+    // Removed 'All Locations' button; no handler needed
+    suggestBtns.forEach(btn => {
+      btn.addEventListener('click', function(){
+        // If this is the first pass, do client-side updates, then simulate a second click to submit.
+        const passFlag = this.getAttribute('data-pass') || '0';
+        const bid = this.getAttribute('data-bid');
+        if (bucketSelect) {
+          bucketSelect.value = bid;
+        } else {
+          let hidden = form.querySelector('input[name="bucket"][type="hidden"]');
+          if (!hidden) {
+            hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'bucket';
+            form.appendChild(hidden);
+          }
+          hidden.value = bid;
+        }
+        // Visually mark selected bucket immediately
+        try {
+          document.querySelectorAll('button.suggest-bucket').forEach(b => b.classList.remove('selected'));
+          this.classList.add('selected');
+        } catch (_) { /* no-op */ }
+        // Instant client-side update of Add Tips for Payout based on comparison table for UX
+        try {
+          let rowsLocal = compareRows;
+          if (!Array.isArray(rowsLocal) || rowsLocal.length === 0) {
+            try {
+              const compareJsonEl2 = document.getElementById('compare-rows-json');
+              if (compareJsonEl2 && compareJsonEl2.textContent) {
+                rowsLocal = JSON.parse(compareJsonEl2.textContent || '[]') || [];
+              }
+            } catch (_) { rowsLocal = []; }
+          }
+          if (Array.isArray(rowsLocal) && rowsLocal.length > 0) {
+            const row = rowsLocal.find(r => (r && r.bucket_id) === bid);
+            if (row) {
+              const setVal = (name, val) => {
+                const inp = form.querySelector(`input[name="${name}"]`);
+                if (inp) inp.value = (Number(val ?? 0)).toFixed(2);
+              };
+              // Update tip pool suggestions
+              setVal('bartips', row.bartips);
+              setVal('servertips', row.servertips);
+              setVal('expotips', row.expotips);
+              setVal('runnertips', row.runnertips);
+              // Update Net Sales to the location's category_total_all
+              setVal('netsales', row.category_total_all);
+              // Leave cash/cc/gratuity to server-side authoritative recompute
+              // After programmatic changes, fire input events so live totals recalc immediately
+              const fire = (name) => { const el = form.querySelector(`input[name="${name}"]`); if (el) el.dispatchEvent(new Event('input', {bubbles:true})); };
+              ['bartips','servertips','expotips','runnertips','netsales','cashtips','creditcardtip','gratuity'].forEach(fire);
+          // Also run a direct update to immediately refresh totals and Gross Tip %
+          try { if (typeof update === 'function') update(); } catch(_){}
+            }
+          }
+          // Even if no compare row matched, still fire input events to ensure recalculation
+          const fire2 = (name) => { const el = form.querySelector(`input[name="${name}"]`); if (el) el.dispatchEvent(new Event('input', {bubbles:true})); };
+          ['bartips','servertips','expotips','runnertips','netsales','cashtips','creditcardtip','gratuity'].forEach(fire2);
+          try { if (typeof update === 'function') update(); } catch(_){}
+        } catch (_) { /* no-op */ }
+        // If this was the first pass, simulate a second click to proceed with submit
+        if (passFlag !== '1') {
+          this.setAttribute('data-pass', '1');
+          // Small delay to allow DOM to update (paint) before submit
+          setTimeout(() => { try { this.click(); } catch(_){} }, 300);
+          return; // prevent immediate submit on first pass
+        } else {
+          this.removeAttribute('data-pass');
+        }
+        // Auto-submit to fetch authoritative values after client-side preview updates
+        let actionHidden = form.querySelector('input[name="action"][type="hidden"]');
+        if (!actionHidden) {
+          actionHidden = document.createElement('input');
+          actionHidden.type = 'hidden';
+          actionHidden.name = 'action';
+          form.appendChild(actionHidden);
+        }
+        actionHidden.value = 'fetch_toast';
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit();
+        } else {
+          // Fallback: create a temporary submit button to trigger validation
+          const tmp = document.createElement('button');
+          tmp.type = 'submit';
+          tmp.style.display = 'none';
+          form.appendChild(tmp);
+          tmp.click();
+          form.removeChild(tmp);
+        }
+      });
+    });
+    // Update suggested bucket statuses based on worker/date
+    async function refreshSuggestStatuses(){
+      try {
+        if (!workerSel || !dateInput) return;
+        const worker = workerSel.value;
+        const date = dateInput.value;
+        if (!worker || !date) return;
+        const btns = Array.from(document.querySelectorAll('button.suggest-bucket'));
+        if (btns.length === 0) return;
+        const ids = btns.map(b => b.getAttribute('data-bid')).filter(Boolean);
+        const url = `/api/server/bucket-status?worker=${encodeURIComponent(worker)}&date=${encodeURIComponent(date)}&buckets=${encodeURIComponent(ids.join(','))}`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        // Clear previous statuses
+        btns.forEach(b => b.classList.remove('status-unpushed','status-pushed','status-committed'));
+        btns.forEach(b => {
+          const bid = b.getAttribute('data-bid');
+          const st = data && data[bid] ? data[bid] : null;
+          const pushed = st ? Number(st.pushed_total||0) : 0;
+          const committed = st ? Number(st.committed_total||0) : 0;
+          if (committed > 0) b.classList.add('status-committed');
+          else if (pushed > 0) b.classList.add('status-pushed');
+          else b.classList.add('status-unpushed');
+        });
+      } catch (_) {}
+    }
+    // Trigger on load and on worker/date changes
+    refreshSuggestStatuses();
+    if (workerSel) workerSel.addEventListener('change', refreshSuggestStatuses);
+    if (dateInput) dateInput.addEventListener('change', refreshSuggestStatuses);
+    // No 'All Locations' submission path
+
+    function ensureHiddenAction(val){
+      let actionHidden = form.querySelector('input[name="action"][type="hidden"]');
+      if (!actionHidden) {
+        actionHidden = document.createElement('input');
+        actionHidden.type = 'hidden';
+        actionHidden.name = 'action';
+        form.appendChild(actionHidden);
+      }
+      actionHidden.value = val;
+    }
+
+    function submitFetch(){
+      ensureHiddenAction('fetch_toast');
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        const tmp = document.createElement('button');
+        tmp.type = 'submit';
+        tmp.style.display = 'none';
+        form.appendChild(tmp);
+        tmp.click();
+        form.removeChild(tmp);
+      }
+    }
+
+    // Persist selections in localStorage
+    const LS_WORKER_KEY = 'serverTips.worker';
+    const LS_DATE_KEY = 'serverTips.date';
+    function saveSelections(){
+      try {
+        if (workerSel && workerSel.value) localStorage.setItem(LS_WORKER_KEY, workerSel.value);
+        if (dateInput && dateInput.value) localStorage.setItem(LS_DATE_KEY, dateInput.value);
+      } catch (_) {}
+    }
+
+    if (workerSel) {
+      workerSel.addEventListener('change', () => { saveSelections(); submitFetch(); });
+    }
+    if (dateInput) {
+      dateInput.addEventListener('change', () => { saveSelections(); submitFetch(); });
+    }
+
+    // On load, prefill from storage and auto-fetch once if changed
+    try {
+      let didPrefill = false;
+      // 1) URL params take priority
+      const params = new URLSearchParams(window.location.search || "");
+      const urlWorker = params.get('worker');
+      const urlDate = params.get('date');
+      const urlBucket = params.get('bucket');
+      if (workerSel && urlWorker) {
+        const opt = Array.from(workerSel.options || []).find(o => o.value === urlWorker);
+        if (opt) { workerSel.value = urlWorker; didPrefill = true; }
+      }
+      if (dateInput && urlDate) {
+        dateInput.value = urlDate; didPrefill = true;
+      }
+      if (urlBucket) {
+        // Ensure a hidden input 'bucket' exists and is set to the provided bucket id or display
+        let hiddenB = form.querySelector('input[name="bucket"][type="hidden"]');
+        if (!hiddenB) {
+          hiddenB = document.createElement('input');
+          hiddenB.type = 'hidden';
+          hiddenB.name = 'bucket';
+          form.appendChild(hiddenB);
+        }
+        hiddenB.value = urlBucket;
+        didPrefill = true;
+      }
+      const savedWorker = localStorage.getItem(LS_WORKER_KEY);
+      const savedDate = localStorage.getItem(LS_DATE_KEY);
+      // 2) If no URL param set anything, fall back to saved selections
+      if (!urlWorker && workerSel && savedWorker && workerSel.value !== savedWorker) {
+        // Only set if the option exists in the list
+        const opt = Array.from(workerSel.options || []).find(o => o.value === savedWorker);
+        if (opt) { workerSel.value = savedWorker; didPrefill = true; }
+      }
+      if (!urlDate && dateInput && savedDate && dateInput.value !== savedDate) {
+        dateInput.value = savedDate; didPrefill = true;
+      }
+      if (didPrefill) {
+        submitFetch();
+      }
+
+      // 3) If server suggested an auto bucket, preselect and auto-fetch on load
+      try {
+        let hiddenB = form.querySelector('input[name="bucket"][type="hidden"]');
+        const autoBucket = hiddenB && hiddenB.value ? hiddenB.value : '';
+        if (!didPrefill && autoBucket && workerSel && workerSel.value && dateInput && dateInput.value) {
+          // Reflect selection in any visible selector if present
+          const sel = form.querySelector('select[name="bucket"]');
+          if (sel) {
+            const opt2 = Array.from(sel.options || []).find(o => o.value === autoBucket);
+            if (opt2) sel.value = autoBucket;
+          }
+          // Visually mark the suggested bucket button
+          try {
+            document.querySelectorAll('button.suggest-bucket').forEach(b => {
+              b.classList.toggle('selected', b.getAttribute('data-bid') === autoBucket);
+            });
+          } catch(_) {}
+          // Fetch authoritative figures for the auto-selected bucket ONCE per (worker,date,autoBucket)
+          try {
+            const ssKey = `serverTips.autoFetched:${workerSel.value}|${dateInput.value}|${autoBucket}`;
+            const already = (sessionStorage.getItem(ssKey) === '1');
+            if (!already) {
+              submitFetch();
+              sessionStorage.setItem(ssKey, '1');
+            }
+          } catch(_) { submitFetch(); }
+        }
+      } catch(_) {}
+    } catch (_) {}
+    
+    // Save current selections on first load in case user navigates away
+    saveSelections();
+    
+    });
+  })();
+  </script>
+
+{% if result and result.undo_message %}
+  <div class="card" style="margin-top:10px; border-color:#2e7d32;">
+    <p style="margin:0; color:#2e7d32;"><strong>{{ result.undo_message }}</strong></p>
+  </div>
+{% endif %}
+
+{% if result %}
+  {% if result.errors and result.errors|length > 0 %}
+    <div style="margin-top:12px; color:#b00;">
+      <strong>Errors:</strong>
+      <ul>
+        {% for e in result.errors %}
+        <li>{{ e }}</li>
+        {% endfor %}
+      </ul>
+      {% if result.order_guids and result.order_guids|length > 0 %}
+      <div style="margin-top:8px;">
+        <strong>Orders used for {{ result.worker_name }} (fallback):</strong>
+        <ul>
+          {% for og in result.order_guids %}
+          <li><a href="/inspect/{{ og }}" target="_blank">{{ og }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  {% else %}
+    <div style="margin-top:12px;">
+      {% if result.saved %}
+      <p style="color:#0a0;"><strong>Saved.</strong></p>
+      {% endif %}
+      {% if result.filter_bucket_display or (result.filter_windows_utc and result.filter_windows_utc|length > 0) %}
+      <div class="card" style="margin-bottom:10px;">
+        <h4>Active Filter</h4>
+        {% if result.filter_bucket_display %}
+          <p><strong>Location:</strong> {{ result.filter_bucket_display }}</p>
+        {% endif %}
+        {% if result.filter_windows_utc and result.filter_windows_utc|length > 0 %}
+          <p><strong>Shift windows (UTC):</strong></p>
+          <ul>
+            {% for w in result.filter_windows_utc %}
+              <li>{{ w }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if result.filter_windows_local and result.filter_windows_local|length > 0 %}
+          <p><strong>Shift windows (Local - America/Chicago):</strong></p>
+          <ul>
+            {% for w in result.filter_windows_local %}
+              <li>{{ w }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="table-wrap">
+        {% if result.gratuity_total_sum is defined %}
+        <div class="card" style="margin-bottom:10px;">
+          <h4>Intermediate Totals (current filter)</h4>
+          <div class="inline-stats" style="font-size:13px; color:#333; display:flex; gap:18px; flex-wrap:wrap;">
+            <div>Gratuity total: <strong>{{ '%.2f'|format(result.gratuity_total_sum or 0) }}</strong></div>
+            <div>Non-cash tips: <strong>{{ '%.2f'|format(result.noncash_tips_sum or 0) }}</strong></div>
+            <div>Cash collected: <strong>{{ '%.2f'|format(result.cash_collected_sum or 0) }}</strong></div>
+            <div>
+              Formula: <code>(gratuity_total + non-cash tips) - cash collected</code>
+              = <strong>{{ '%.2f'|format((result.gratuity_total_sum or 0) + (result.noncash_tips_sum or 0) - (result.cash_collected_sum or 0)) }}</strong>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        <table>
+          <thead><tr><th>Worker</th><th>Bucket</th><th>Total Payout Tips</th><th>Owed to Server</th><th>Owed to Restaurant</th><th>After Payout Tips</th><th>Gross Tip %</th></tr></thead>
+          <tbody>
+            <tr>
+              {# Compute After Payout Tips: if Owed to Server != 0 then (Owed to Server - Total Payout Tips) else (Owed to Restaurant + Total Payout Tips) #}
+              {% set _otp = (result.owed_to_server or 0)|float %}
+              {% set _otr = (result.owed_to_restaurant or 0)|float %}
+              {% set _tpt = (result.payout_tips or 0)|float %}
+              {% if _otp != 0.0 %}
+                {% set after_val = _otp - _tpt %}
+              {% else %}
+                {% set after_val = _otr + _tpt %}
+              {% endif %}
+              <td>{{ result.worker_name }}</td>
+              <td>{{ result.bucket }}</td>
+              <td id="total-payout-tips">{{ '%.2f'|format(result.payout_tips) }}</td>
+              <td id="owed-to-server">{{ '%.2f'|format(result.owed_to_server) }}</td>
+              <td id="owed-to-restaurant">{{ '%.2f'|format(result.owed_to_restaurant) }}</td>
+              <td id="after-payout-tips">{{ '%.2f'|format(after_val) }}</td>
+              <td id="gross-tip-pct">{{ result.gross_tip_pct }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <script>
+      (function(){
+        document.addEventListener('DOMContentLoaded', function(){
+          try {
+            const form = document.querySelector('form[action="/server-tips"]');
+            if (!form) return;
+            const fields = ['bartips','servertips','expotips','runnertips'];
+            const grossFields = ['cashtips','creditcardtip','gratuity','netsales'];
+            const payoutCell = document.getElementById('total-payout-tips');
+            const afterCell = document.getElementById('after-payout-tips');
+            const owedSCell = document.getElementById('owed-to-server');
+            const owedRCell = document.getElementById('owed-to-restaurant');
+            const grossCell = document.getElementById('gross-tip-pct');
+            const toNum = (v) => { const n = parseFloat((v||'').toString().replace(/,/g,'')); return isNaN(n) ? 0 : n; };
+            const getVal = (name) => {
+              const el = form.querySelector(`input[name="${name}"]`);
+              return toNum(el && el.value);
+            };
+            function update(){
+              try {
+                const sum = fields.map(getVal).reduce((a,b)=>a+b,0);
+                if (payoutCell) payoutCell.textContent = sum.toFixed(2);
+                const owedS = toNum(owedSCell && owedSCell.textContent);
+                const owedR = toNum(owedRCell && owedRCell.textContent);
+                const afterVal = (owedS !== 0) ? (owedS - sum) : (owedR + sum);
+                if (afterCell) afterCell.textContent = afterVal.toFixed(2);
+
+                // Recompute Gross Tip % from Main Figures
+                const cash = getVal('cashtips');
+                const cc = getVal('creditcardtip');
+                const grat = getVal('gratuity');
+                const nets = getVal('netsales');
+                let pct = 0;
+                if (nets > 0) {
+                  pct = ((cash + cc + grat) / nets) * 100.0;
+                }
+                if (grossCell) grossCell.textContent = `Gross Tip %: ${pct.toFixed(2)}%`;
+              } catch (e) { /* no-op */ }
+            }
+            fields.forEach(n => {
+              const el = form.querySelector(`input[name="${n}"]`);
+              if (el) {
+                el.addEventListener('input', update);
+                el.addEventListener('change', update);
+              }
+            });
+            grossFields.forEach(n => {
+              const el = form.querySelector(`input[name="${n}"]`);
+              if (el) {
+                el.addEventListener('input', update);
+                el.addEventListener('change', update);
+              }
+            });
+            // Initial compute on load
+            update();
+          } catch (_) { /* no-op */ }
+        });
+      })();
+      </script>
+
+      {% if result.order_guids and result.order_guids|length > 0 %}
+      <div class="card" style="margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 style="margin:0;">Included Order GUIDs (current filter)</h4>
+          <div>
+            <button id="download-order-guids" type="button" style="padding:4px 8px; margin-right:6px;">Download CSV</button>
+            <button id="download-order-checks" type="button" style="padding:4px 8px; margin-right:6px;">Download Checks CSV</button>
+            <button id="toggle-order-guids" type="button" style="padding:4px 8px;">Show</button>
+          </div>
+        </div>
+        <script type="application/json" id="order-guids-json">{{ (result.order_guids or []) | tojson | safe }}</script>
+        <script type="application/json" id="order-checks-json">{{ (result.order_checks or {}) | tojson | safe }}</script>
+        <div id="order-guids-list" style="display:none; margin-top:8px; max-height:200px; overflow:auto;">
+          <ul>
+            {% for g in result.order_guids %}
+              <li style="font-family:monospace; font-size:12px;">
+                <div><strong>{{ g }}</strong></div>
+                {% set checks = (result.order_checks.get(g) if result.order_checks else []) %}
+                {% if checks and checks|length > 0 %}
+                  <ul style="margin:4px 0 8px 16px;">
+                    {% for ck in checks %}
+                      <li>Check {{ ck.display_number or '?' }} — Tip {{ '%.2f'|format(ck.tip_amount or 0) }}</li>
+                    {% endfor %}
+                  </ul>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <script>
+      (function(){
+        const btn = document.getElementById('toggle-order-guids');
+        const list = document.getElementById('order-guids-list');
+        const dl = document.getElementById('download-order-guids');
+        const dlChecks = document.getElementById('download-order-checks');
+        const jsonEl = document.getElementById('order-guids-json');
+        const checksEl = document.getElementById('order-checks-json');
+        let guidsArr = [];
+        if (jsonEl) {
+          try { guidsArr = JSON.parse(jsonEl.textContent || '[]'); } catch (e) { guidsArr = []; }
+        }
+        let checksMap = {};
+        if (checksEl) {
+          try { checksMap = JSON.parse(checksEl.textContent || '{}'); } catch (e) { checksMap = {}; }
+        }
+        if (btn && list) {
+          btn.addEventListener('click', function(){
+            const opened = list.style.display !== 'none';
+            list.style.display = opened ? 'none' : 'block';
+            btn.textContent = opened ? 'Show' : 'Hide';
+          });
+        }
+        if (dl) {
+          dl.addEventListener('click', function(){
+            let csv = 'order_guid\n';
+            for (const g of guidsArr) { csv += g + '\n'; }
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'order_guids.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          });
+        }
+        if (dlChecks) {
+          dlChecks.addEventListener('click', function(){
+            let csv = 'order_guid,check_display_number,tip_amount\n';
+            for (const g of guidsArr) {
+              const arr = Array.isArray(checksMap[g]) ? checksMap[g] : [];
+              if (arr.length === 0) {
+                csv += `${g},,\n`;
+                continue;
+              }
+              for (const ck of arr) {
+                const dn = (ck.display_number ?? '').toString().replaceAll('"','""');
+                const tip = Number(ck.tip_amount ?? 0).toFixed(2);
+                csv += `${g},"${dn}",${tip}\n`;
+              }
+            }
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'order_checks.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          });
+        }
+      })();
+      </script>
+      {% endif %}
+
+      {% if result.compare_rows %}
+      <div class="table-wrap compare" style="margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 style="margin:0;">All Locations vs Per-Location Comparison</h4>
+          <button id="download-compare-csv" type="button" style="padding:4px 8px;">Download CSV</button>
+        </div>
+        <script type="application/json" id="compare-rows-json">{{ (result.compare_rows or []) | tojson | safe }}</script>
+        <table>
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Total Sales</th>
+              <th>Bartips</th>
+              <th>Bussertips</th>
+              <th>Expotips</th>
+              <th>Runnertips</th>
+              <th>Shift Windows (Local)</th>
+              <th>Checks Matched</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in result.compare_rows %}
+            <tr>
+              <td>{{ row.bucket_name }}</td>
+              <td>{{ '%.2f'|format(row.category_total_all or 0) }}</td>
+              <td>{{ '%.2f'|format(row.bartips or 0) }}</td>
+              <td>{{ '%.2f'|format(row.servertips or 0) }}</td>
+              <td>{{ '%.2f'|format(row.expotips or 0) }}</td>
+              <td>{{ '%.2f'|format(row.runnertips or 0) }}</td>
+              <td>
+                {% if row.windows_local and row.windows_local|length > 0 %}
+                  <ul style="margin:0; padding-left:18px;">
+                    {% for w in row.windows_local %}
+                      <li>{{ w }}</li>
+                    {% endfor %}
+                  </ul>
+                  {% if row.windows_utc and row.windows_utc|length > 0 %}
+                  <div style="margin-top:4px; font-size:12px; color:#666;">
+                    UTC: {{ row.windows_utc | join(' | ') }}
+                  </div>
+                  {% endif %}
+                  {% if row.csv_debug %}
+                  <div style="margin-top:2px; font-size:12px; color:#888;">
+                    CSV match — total: {{ row.csv_debug.total }}, emp+date: {{ row.csv_debug.emp_date }}, bucket: {{ row.csv_debug.bucket }}, overlap: {{ row.csv_debug.overlap }}
+                  </div>
+                  {% if row.csv_debug.error %}
+                  <div style="margin-top:2px; font-size:12px; color:#B00;">
+                    Error: {{ row.csv_debug.error }}
+                  </div>
+                  {% endif %}
+                  {% endif %}
+                {% else %}
+                  —
+                  {% if row.csv_debug %}
+                  <div style="margin-top:2px; font-size:12px; color:#888;">
+                    CSV match — total: {{ row.csv_debug.total }}, emp+date: {{ row.csv_debug.emp_date }}, bucket: {{ row.csv_debug.bucket }}, overlap: {{ row.csv_debug.overlap }}
+                  </div>
+                  {% if row.csv_debug.error %}
+                  <div style="margin-top:2px; font-size:12px; color:#B00;">
+                    Error: {{ row.csv_debug.error }}
+                  </div>
+                  {% endif %}
+                  {% endif %}
+                {% endif %}
+              </td>
+              <td>{{ row.checks_matched or 0 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <script>
+        (function(){
+          const btn = document.getElementById('download-compare-csv');
+          const jsonEl = document.getElementById('compare-rows-json');
+          let rows = [];
+          if (jsonEl) {
+            try { rows = JSON.parse(jsonEl.textContent || '[]'); } catch (e) { rows = []; }
+          }
+          if (btn) {
+            btn.addEventListener('click', function(){
+              const headers = ['Location','Total Sales','Bartips','Servertips','Expotips','Runnertips','Shift Windows (Local)'];
+              let csv = headers.join(',') + '\n';
+              for (const r of rows) {
+                const loc = (r.bucket_name || '').replaceAll('"','""');
+                const ts = (r.category_total_all ?? 0).toFixed(2);
+                const bt = (r.bartips ?? 0).toFixed(2);
+                const st = (r.servertips ?? 0).toFixed(2);
+                const et = (r.expotips ?? 0).toFixed(2);
+                const rt = (r.runnertips ?? 0).toFixed(2);
+                const wins = Array.isArray(r.windows_local) ? r.windows_local.join(' | ') : '';
+                const winsEsc = wins.replaceAll('"','""');
+                const rowCsv = `"${loc}",${ts},${bt},${st},${et},${rt},"${winsEsc}"`;
+                csv += rowCsv + '\n';
+              }
+              const blob = new Blob([csv], {type: 'text/csv'});
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'server_tips_location_comparison.csv';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            });
+          }
+        })();
+        </script>
+      </div>
+      {% endif %}
+      {% if result.category_totals %}
+      <div class="table-wrap" style="margin-top:12px;">
+        <h4>Per-Category Sales and Tip Calculations</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Sales</th>
+              <th>Bartips (2%, excl Bottled Wine)</th>
+              <th>Servertips (2%)</th>
+              <th>Expotips (1% Food)</th>
+              <th>Runnertips (0.5% Food)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set cats = ['Food','Wine','Draft Beer','Liquor','NA Beverage','Bottled Beer','Bottled Wine'] %}
+            {% for c in cats %}
+            <tr>
+              <td>{{ c }}</td>
+              <td>{{ '%.2f'|format(result.category_totals.get(c, 0) or 0) }}</td>
+              <td>{{ '%.2f'|format((result.category_tip_breakdown['bartips'].get(c) if result.category_tip_breakdown and result.category_tip_breakdown['bartips'] else 0) or 0) }}</td>
+              <td>{{ '%.2f'|format((result.category_tip_breakdown['servertips'].get(c) if result.category_tip_breakdown and result.category_tip_breakdown['servertips'] else 0) or 0) }}</td>
+              <td>{{ '%.2f'|format((result.category_tip_breakdown['expotips'].get(c) if result.category_tip_breakdown and result.category_tip_breakdown['expotips'] else 0) or 0) }}</td>
+              <td>{{ '%.2f'|format((result.category_tip_breakdown['runnertips'].get(c) if result.category_tip_breakdown and result.category_tip_breakdown['runnertips'] else 0) or 0) }}</td>
+            </tr>
+            {% endfor %}
+            <tr>
+              <td><strong>Total</strong></td>
+              <td><strong>{{ '%.2f'|format(result.category_total_all or 0) }}</strong></td>
+              <td><strong>{{ '%.2f'|format(defaults.bartips or 0) }}</strong></td>
+              <td><strong>{{ '%.2f'|format(defaults.servertips or 0) }}</strong></td>
+              <td><strong>{{ '%.2f'|format(defaults.expotips or 0) }}</strong></td>
+              <td><strong>{{ '%.2f'|format(defaults.runnertips or 0) }}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,61 @@
+{
+  "_description": "Net sales by employee daily - replicate net_sales_by_employee_daily.csv",
+  "_csv_source": "net_sales_by_employee_daily.csv",
+  "_features": ["explode_with_context", "coalesce", "cte"],
+  "query": {
+    "with": [
+      {
+        "name": "sales_by_server",
+        "query": {
+          "from": {
+            "source_file": "orders_full_20251213.json",
+            "alias": "o",
+            "explode_with_context": {
+              "path": "checks.payments",
+              "aliases": ["c", "p"],
+              "where": [
+                {"field": "c.voided", "op": "!=", "value": true},
+                {"field": "c.deleted", "op": "!=", "value": true}
+              ]
+            }
+          },
+          "group_by": [
+            {"field": "coalesce(p.server.guid, o.server.guid)", "alias": "server_guid"}
+          ],
+          "select": [
+            {"expr": "coalesce(p.server.guid, o.server.guid)", "alias": "server_guid"},
+            {"expr": "c.amount", "alias": "net_sales", "agg": "sum"},
+            {"expr": "c.totalAmount", "alias": "total_sales", "agg": "sum"},
+            {"expr": "c.guid", "alias": "checks_count", "agg": "count"}
+          ]
+        }
+      }
+    ],
+    "from_subquery": "sales_by_server",
+    "joins": [
+      {
+        "source": {
+          "source_file": "labor_v1_employees.json",
+          "alias": "emp"
+        },
+        "on": {
+          "left": "sales_by_server.server_guid",
+          "right": "emp.guid"
+        },
+        "join_type": "left",
+        "skip_nulls": true
+      }
+    ],
+    "select": [
+      {"expr": "sales_by_server.server_guid", "alias": "employee_guid"},
+      {"expr": "emp.firstName", "alias": "first_name"},
+      {"expr": "emp.lastName", "alias": "last_name"},
+      {"expr": "sales_by_server.net_sales", "alias": "net_sales"},
+      {"expr": "sales_by_server.total_sales", "alias": "total_sales"},
+      {"expr": "sales_by_server.checks_count", "alias": "checks_count"}
+    ],
+    "order_by": [
+      {"field": "net_sales", "direction": "desc"}
+    ]
+  }
+}

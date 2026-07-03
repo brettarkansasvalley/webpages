@@ -1,0 +1,36 @@
+{
+  "from": {
+    "source_file": "shopify_feather_place_products.json",
+    "alias": "fp",
+    "explode": "variants"
+  },
+  "joins": [
+    {
+      "source": {
+        "source_file": "shopify_zucker_products.json",
+        "alias": "zucker",
+        "explode": "variants"
+      },
+      "on": {
+        "left": "fp.variants.sku",
+        "right": "zucker.variants.sku"
+      },
+      "join_type": "full"
+    }
+  ],
+  "select": [
+    {"expr": "fp.variants.sku", "alias": "fp_sku"},
+    {"expr": "fp.title", "alias": "fp_product_title"},
+    {"expr": "fp.handle", "alias": "fp_handle"},
+    {"expr": "fp.variants.price", "alias": "fp_price"},
+    {"expr": "fp.variants.inventoryQuantity", "alias": "fp_inventory"},
+    {"expr": "fp.variants.barcode", "alias": "fp_barcode"},
+    {"expr": "zucker.variants.sku", "alias": "zucker_sku"},
+    {"expr": "zucker.title", "alias": "zucker_product_title"},
+    {"expr": "zucker.handle", "alias": "zucker_handle"},
+    {"expr": "zucker.variants.price", "alias": "zucker_price"},
+    {"expr": "zucker.variants.inventoryQuantity", "alias": "zucker_inventory"},
+    {"expr": "zucker.variants.barcode", "alias": "zucker_barcode"}
+  ],
+  "limit": 10000
+}

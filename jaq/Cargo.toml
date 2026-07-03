@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "jaq-core",
+    "jaq-std",
+    "jaq-json",
+    "jaq-fmts",
+    "jaq-all",
+    "jaq",
+    "jaq-play",
+    "json-loader-server",
+]
+
+resolver = "2"
+
+[workspace.dependencies]
+jaq-core = { version = "3.0.0-beta", path = "jaq-core" }
+jaq-std  = { version = "3.0.0-beta", path = "jaq-std"  }
+jaq-json = { version = "2.0.0-beta", path = "jaq-json" }
+jaq-fmts = { version = "0.1.0-beta", path = "jaq-fmts" }
+jaq-all  = { version = "0.1.0-beta", path = "jaq-all"  }
+
+[profile.release]
+strip = true
+codegen-units = 1

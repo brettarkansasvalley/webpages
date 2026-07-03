@@ -1,0 +1,144 @@
+body {
+  font-family: "Roboto Condensed",sans-serif;
+  display: flex;
+  flex-flow: column;
+  height: 100vh;
+  margin: 0;
+}
+
+header {
+  align-items: center;
+  display: flex;
+  padding: 0 1rem;
+}
+
+.top {
+  height: 54px;
+  background: #101112;
+}
+
+.about {
+  flex-grow: 1;
+  text-align: right;
+}
+
+.IO header {
+  background: #b7bcc0;
+}
+
+.filter header {
+  background: #70b0e0;
+}
+
+.filter {
+  flex: 1;
+}
+
+.IO {
+  display: flex;
+  justify-content: space-between;
+  flex: 3;
+  /* see https://stackoverflow.com/a/48396712 */
+  min-height: 0;
+}
+
+section {
+  display: flex;
+  flex-direction: column;
+}
+
+.IO > section {
+  flex: 1;
+  min-width: 0;
+}
+
+.logo {
+  height: 100%;
+}
+
+button {
+  border: none;
+  color: #b7bcc0;
+  background: #282b2d;
+  cursor: pointer;
+  transition: background-color .2s ease-out;
+  padding: .375rem .75rem;
+  font-size: .875rem;
+  border-radius: .3rem;
+  margin-left: 8px;
+}
+
+button:hover { background: #3a3e41; }
+
+#run-stop { display: inline-flex; }
+#stop { visibility: hidden; position: absolute; }
+
+h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0.5em 0;
+}
+
+textarea, #output {
+  font-family: "Roboto Mono",monospace;
+  font-size: 1.2rem;
+  height: 100%; 
+  max-height: 100%;
+  margin: 0;
+}
+
+textarea {
+  width: 100%;
+  resize: none;
+  box-sizing: border-box;
+}
+
+/* Inspiration: https://zserge.com/posts/js-editor/ */
+#output {
+  overflow: auto;
+  padding: 2px;
+}
+
+.string  { color: green; }
+.bytes   { color: red; }
+.number  { color: darkorange; }
+.boolean { color: blue; }
+.null    { color: magenta; }
+
+.red     { color: #dc322f; }
+.yellow  { color: #b58900; }
+
+
+.settings { display: inline-block; }
+
+.settings > div {
+  display: none;
+  gap: 10px;
+  position: absolute;
+  background: rgba(16,17,18,.85);
+  color: #f0f1f2;
+  padding: 1rem;
+  border-radius: .125rem;
+  backdrop-filter: blur(3px);
+}
+
+.settings:hover > div { display: flex; }
+
+.settings hr { color: rgba(126,135,142,.25); }
+
+.settings fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 2px;
+}
+
+a {
+  text-decoration: inherit;
+  color: inherit;
+}

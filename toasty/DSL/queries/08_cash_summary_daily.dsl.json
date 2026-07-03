@@ -1,0 +1,25 @@
+{
+  "_description": "Replicate cash_summary_daily.csv - Cash entry summaries by type and reason",
+  "_csv_source": "cash_summary_daily.csv",
+  "_csv_columns": "date,type,reason,amount_total,count",
+  "query": {
+    "from": {
+      "source_file": "cashmgmt_v1_entries_20260130.json",
+      "alias": "ce"
+    },
+    "group_by": [
+      {"field": "ce.type"},
+      {"field": "ce.reason"}
+    ],
+    "select": [
+      {"expr": "ce.type", "alias": "type"},
+      {"expr": "ce.reason", "alias": "reason"},
+      {"expr": "sum(ce.amount)", "alias": "amount_total"},
+      {"expr": "count(ce.guid)", "alias": "count"}
+    ],
+    "order_by": [
+      {"field": "ce.type", "direction": "asc"},
+      {"field": "ce.reason", "direction": "asc"}
+    ]
+  }
+}

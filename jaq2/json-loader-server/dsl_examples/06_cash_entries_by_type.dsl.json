@@ -1,0 +1,27 @@
+{
+  "_description": "Cash entries summary by type and reason",
+  "_feature": "group_by_expressions",
+  "query": {
+    "from": {
+      "source_file": "cashmgmt_v1_entries_20260130.json",
+      "alias": "ce"
+    },
+    "group_by": [
+      {"field": "ce.type"},
+      {"field": "ce.reason"}
+    ],
+    "select": [
+      {"expr": "ce.type", "alias": "entry_type"},
+      {"expr": "ce.reason", "alias": "reason"},
+      {"expr": "sum(ce.amount)", "alias": "total_amount"},
+      {"expr": "count(ce.guid)", "alias": "entry_count"},
+      {"expr": "avg(ce.amount)", "alias": "avg_amount"},
+      {"expr": "min(ce.amount)", "alias": "min_amount"},
+      {"expr": "max(ce.amount)", "alias": "max_amount"}
+    ],
+    "order_by": [
+      {"field": "entry_type", "direction": "asc"},
+      {"field": "reason", "direction": "asc"}
+    ]
+  }
+}

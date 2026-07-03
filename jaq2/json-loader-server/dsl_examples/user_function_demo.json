@@ -1,0 +1,53 @@
+{
+  "description": "Demonstrates user-defined functions in DSL queries",
+  "functions": {
+    "calculateTax": {
+      "params": ["amount", "rate"],
+      "body": {
+        "multiply": [{"var": "amount"}, {"var": "rate"}]
+      },
+      "doc": "Calculate tax for a given amount and rate"
+    },
+    "discountPrice": {
+      "params": ["price", "discountPercent"],
+      "body": {
+        "multiply": [
+          {"var": "price"},
+          {"subtract": [
+            {"literal": 1.0},
+            {"divide": [{"var": "discountPercent"}, {"literal": 100}]}
+          ]}
+        ]
+      }
+    }
+  },
+  "let": {
+    "taxRate": {"literal": 0.08}
+  },
+  "from": {
+    "source_file": "products.json",
+    "alias": "p"
+  },
+  "select": [
+    {"expr": "p.name", "alias": "ProductName"},
+    {"expr": "p.price", "alias": "OriginalPrice"},
+    {
+      "expression": {
+        "call": {"name": "discountPrice", "args": [{"var": "p.price"}, {"literal": 10}]}
+      },
+      "alias": "DiscountedPrice"
+    },
+    {
+      "expression": {
+        "call": {
+          "name": "calculateTax",
+          "args": [
+            {"call": {"name": "discountPrice", "args": [{"var": "p.price"}, {"literal": 10}]}},
+            {"var": "taxRate"}
+          ]
+        }
+      },
+      "alias": "TaxAmount"
+    }
+  ]
+}

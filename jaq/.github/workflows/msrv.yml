@@ -1,0 +1,32 @@
+name: Build with MSRV (minimal supported Rust version)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Cargo.lock'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+        key: cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: cargo-
+
+    - uses: dtolnay/rust-toolchain@1.69
+    - name: Check jaq-core
+      working-directory: jaq-core
+      run: cargo check
+
+    - uses: dtolnay/rust-toolchain@1.70
+    - name: Check
+      run: cargo check
+    - name: Build
+      run: cargo build --verbose

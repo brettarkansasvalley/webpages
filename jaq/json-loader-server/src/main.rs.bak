@@ -1,0 +1,1662 @@
+use anyhow::{Context, Result};
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::Html,
+    routing::{get, post},
+    Json, Router,
+};
+use jaq_all::data;
+use jaq_core::Vars;
+use jaq_json::{Map as JaqMap, Tag, Val};
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path as StdPath,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
+use tower_http::cors::{Any, CorsLayer};
+use tracing::info;
+use tracing_subscriber;
+
+mod query_engine;
+use query_engine::{execute_query, QueryDsl, QueryResult};
+
+const JSON_DIR: &str = "/home/ubuntu/jaq/loadjson";
+const DB_PATH: &str = "/home/ubuntu/jaq/json-loader-server/database.db";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JsonObject {
+    id: i64,
+    json_data: String,
+    source_file: String,
+    modified_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LoadResult {
+    loaded_files: Vec<String>,
+    total_objects: usize,
+    errors: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QueryRequest {
+    filter: Option<String>,
+    source_file: Option<String>,
+    limit: Option<i32>,
+}
+
+#[derive(Clone)]
+struct AppState {
+    db: Arc<Mutex<Connection>>,
+}
+
+async fn load_json_files(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<LoadResult>, StatusCode> {
+    let load_dir = StdPath::new(JSON_DIR);
+
+    if !load_dir.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let mut loaded_files = Vec::new();
+    let mut skipped_files = Vec::new();
+    let mut total_objects = 0usize;
+    let mut errors = Vec::new();
+
+    let entries = match fs::read_dir(load_dir) {
+        Ok(e) => e,
+        Err(_e) => {
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map(|e| e != "json").unwrap_or(true) {
+            continue;
+        }
+
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let metadata = match fs::metadata(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                errors.push(format!("Error getting metadata for {}: {}", file_name, e));
+                continue;
+            }
+        };
+
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|t| {
+                let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+                Some(duration.as_secs().to_string())
+            })
+            .unwrap_or_else(|| "0".to_string());
+
+        // Check if this file with this modified_at timestamp already exists in the database
+        let should_skip = {
+            let db = state.db.lock().unwrap();
+            let count: i64 = db
+                .query_row(
+                    "SELECT COUNT(*) FROM json_objects WHERE source_file = ?1 AND modified_at = ?2",
+                    params![&file_name, &modified_at],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            count > 0
+        };
+
+        if should_skip {
+            skipped_files.push(file_name);
+            continue;
+        }
+
+        // File is new or has been modified - need to load it
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                errors.push(format!("Error reading file {}: {}", file_name, e));
+                continue;
+            }
+        };
+
+        let json_array: Vec<serde_json::Value> = match serde_json::from_str(&content) {
+            Ok(arr) => arr,
+            Err(e) => {
+                errors.push(format!("Error parsing JSON from {}: {}", file_name, e));
+                continue;
+            }
+        };
+
+        let mut db = state.db.lock().unwrap();
+        let transaction = match db.transaction() {
+            Ok(t) => t,
+            Err(e) => {
+                errors.push(format!(
+                    "Error starting transaction for {}: {}",
+                    file_name, e
+                ));
+                continue;
+            }
+        };
+
+        let mut inserted = 0;
+        for json_value in json_array {
+            let json_str = serde_json::to_string(&json_value).unwrap_or_default();
+
+            // Only insert if this json_data doesn't already exist for this source_file
+            let exists: bool = match transaction.query_row(
+                "SELECT 1 FROM json_objects WHERE json_data = ?1 AND source_file = ?2 LIMIT 1",
+                params![&json_str, &file_name],
+                |_row| Ok(true),
+            ) {
+                Ok(_) => true,
+                Err(rusqlite::Error::QueryReturnedNoRows) => false,
+                Err(_) => false,
+            };
+
+            if !exists {
+                match transaction.execute(
+                    "INSERT INTO json_objects (json_data, source_file, modified_at) VALUES (?1, ?2, ?3)",
+                    params![&json_str, &file_name, &modified_at],
+                ) {
+                    Ok(rows) => inserted += rows,
+                    Err(e) => {
+                        errors.push(format!("Error inserting object from {}: {}", file_name, e));
+                    }
+                }
+            }
+        }
+
+        if let Err(e) = transaction.commit() {
+            errors.push(format!(
+                "Error committing transaction for {}: {}",
+                file_name, e
+            ));
+            continue;
+        }
+
+        loaded_files.push(file_name);
+        total_objects += inserted;
+    }
+
+    // Add skip info to errors for visibility
+    if !skipped_files.is_empty() {
+        errors.push(format!(
+            "Skipped {} unchanged file(s): {}",
+            skipped_files.len(),
+            skipped_files.join(", ")
+        ));
+    }
+
+    Ok(Json(LoadResult {
+        loaded_files,
+        total_objects,
+        errors,
+    }))
+}
+
+async fn get_stats(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<HashMap<String, i64>>, StatusCode> {
+    let db = state.db.lock().unwrap();
+
+    let total_objects: i64 = db
+        .query_row("SELECT COUNT(*) FROM json_objects", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let total_files: i64 = db
+        .query_row(
+            "SELECT COUNT(DISTINCT source_file) FROM json_objects",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let mut stats = HashMap::new();
+    stats.insert("total_objects".to_string(), total_objects);
+    stats.insert("total_files".to_string(), total_files);
+
+    Ok(Json(stats))
+}
+
+async fn get_files(State(state): State<Arc<AppState>>) -> Result<Json<Vec<String>>, StatusCode> {
+    let db = state.db.lock().unwrap();
+
+    let mut stmt =
+        match db.prepare("SELECT DISTINCT source_file FROM json_objects ORDER BY source_file") {
+            Ok(s) => s,
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        };
+
+    let files: Vec<String> = match stmt.query_map([], |row| row.get(0)) {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+
+    Ok(Json(files))
+}
+
+async fn query_objects(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<QueryRequest>,
+) -> Result<Json<Vec<JsonObject>>, StatusCode> {
+    let db = state.db.lock().unwrap();
+
+    let mut query =
+        "SELECT id, json_data, source_file, modified_at FROM json_objects WHERE 1=1".to_string();
+    let mut db_params: Vec<String> = Vec::new();
+
+    if let Some(file) = params.source_file {
+        query.push_str(" AND source_file = ?");
+        db_params.push(file);
+    }
+
+    if let Some(limit) = params.limit {
+        query.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    let mut stmt = match db.prepare(&query) {
+        Ok(s) => s,
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+
+    let objects: Vec<JsonObject> =
+        match stmt.query_map(rusqlite::params_from_iter(db_params), |row| {
+            Ok(JsonObject {
+                id: row.get(0)?,
+                json_data: row.get(1)?,
+                source_file: row.get(2)?,
+                modified_at: row.get(3)?,
+            })
+        }) {
+            Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        };
+
+    // Apply jaq filter if provided
+    let objects = if let Some(filter_str) = params.filter {
+        match apply_jaq_filter(objects, &filter_str) {
+            Ok(filtered) => filtered,
+            Err(e) => {
+                eprintln!("JAQ filter error: {}", e);
+                vec![]
+            }
+        }
+    } else {
+        objects
+    };
+
+    Ok(Json(objects))
+}
+
+fn apply_jaq_filter(objects: Vec<JsonObject>, filter_str: &str) -> Result<Vec<JsonObject>> {
+    use bytes::Bytes;
+    use jaq_json::Num;
+
+    let filter = data::compile(filter_str)
+        .map_err(|e| anyhow::anyhow!("Filter compilation error: {:?}", e))?;
+
+    let runner = Default::default();
+    let vars = Vars::new(std::iter::empty());
+
+    let filtered_objects = objects
+        .into_iter()
+        .filter(|obj| {
+            let json_value: serde_json::Value = match serde_json::from_str(&obj.json_data) {
+                Ok(v) => v,
+                Err(_) => return false,
+            };
+
+            let jaq_value = match json_value {
+                serde_json::Value::Null => Val::Null,
+                serde_json::Value::Bool(b) => Val::Bool(b),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        Val::Num(Num::from_integral(i))
+                    } else if let Some(f) = n.as_f64() {
+                        Val::Num(Num::Float(f))
+                    } else {
+                        Val::Null
+                    }
+                }
+                serde_json::Value::String(s) => Val::Str(Bytes::from(s.clone()), Tag::Utf8),
+                serde_json::Value::Array(arr) => {
+                    Val::Arr(Rc::new(arr.iter().map(json_to_jaq_val).collect()))
+                }
+                serde_json::Value::Object(obj) => {
+                    let map: JaqMap = obj
+                        .iter()
+                        .map(|(k, v)| {
+                            (
+                                json_to_jaq_val(&serde_json::Value::String(k.clone())),
+                                json_to_jaq_val(v),
+                            )
+                        })
+                        .collect();
+                    Val::Obj(Rc::new(map))
+                }
+            };
+
+            let inputs = std::iter::once(Ok::<_, String>(jaq_value));
+            let mut result_count = 0;
+
+            data::run(
+                &runner,
+                &filter,
+                vars.clone(),
+                inputs,
+                |e| e.to_string(),
+                |_| {
+                    result_count += 1;
+                    Ok(())
+                },
+            )
+            .ok();
+
+            result_count > 0
+        })
+        .collect();
+
+    Ok(filtered_objects)
+}
+
+fn json_to_jaq_val(val: &serde_json::Value) -> Val {
+    use bytes::Bytes;
+    use jaq_json::Num;
+
+    match val {
+        serde_json::Value::Null => Val::Null,
+        serde_json::Value::Bool(b) => Val::Bool(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Val::Num(Num::from_integral(i))
+            } else if let Some(f) = n.as_f64() {
+                Val::Num(Num::Float(f))
+            } else {
+                Val::Null
+            }
+        }
+        serde_json::Value::String(s) => Val::Str(Bytes::from(s.clone()), Tag::Utf8),
+        serde_json::Value::Array(arr) => {
+            Val::Arr(Rc::new(arr.iter().map(json_to_jaq_val).collect()))
+        }
+        serde_json::Value::Object(obj) => {
+            let map: JaqMap = obj
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        json_to_jaq_val(&serde_json::Value::String(k.clone())),
+                        json_to_jaq_val(v),
+                    )
+                })
+                .collect();
+            Val::Obj(Rc::new(map))
+        }
+    }
+}
+
+fn init_database() -> Result<Connection> {
+    let conn = Connection::open(DB_PATH).context("Failed to open database")?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS json_objects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            json_data TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            modified_at TEXT NOT NULL,
+            UNIQUE(json_data, source_file)
+        )",
+        [],
+    )
+    .context("Failed to create table")?;
+
+    Ok(conn)
+}
+
+fn html_page() -> String {
+    r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAQ JSON Loader</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.17.1/cdn/themes/light.css">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.17.1/cdn/shoelace-autoloader.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            min-width: 150px;
+        }
+        .stat-card h3 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .stat-card p {
+            margin: 0;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .query-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .results-section {
+            margin-top: 20px;
+        }
+        .json-display {
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .file-info {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #e8f4f8;
+            border-radius: 4px;
+        }
+        .object-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        .object-header {
+            background: #f5f5f5;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .object-content {
+            padding: 15px;
+        }
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success-message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        sl-card {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 JAQ JSON Loader & Query Tool</h1>
+        <sl-button variant="primary" size="large" onclick="loadJsonFiles()">
+            <sl-icon slot="prefix" name="upload"></sl-icon>
+            Load JSON Files
+        </sl-button>
+    </div>
+
+    <div id="loadResult"></div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <h3>Total Objects</h3>
+            <p id="totalObjects">-</p>
+        </div>
+        <div class="stat-card">
+            <h3>Files Loaded</h3>
+            <p id="totalFiles">-</p>
+        </div>
+    </div>
+
+    <sl-card>
+        <div slot="header">
+            <strong>Query Builder</strong>
+        </div>
+        <div class="query-section">
+            <div>
+                <div class="input-group">
+                    <label for="filter">JAQ Filter (optional):</label>
+                    <sl-input id="filter" placeholder="e.g., .title | contains(\"feather\")" size="medium"></sl-input>
+                </div>
+                <div class="input-group">
+                    <label for="sourceFile">Source File (optional):</label>
+                    <sl-select id="sourceFile" placeholder="Select a file" size="medium" clearable>
+                        <sl-option value="">All Files</sl-option>
+                    </sl-select>
+                </div>
+                <div class="input-group">
+                    <label for="limit">Limit (optional):</label>
+                    <sl-input id="limit" type="number" value="50" size="medium"></sl-input>
+                </div>
+                <sl-button variant="success" size="large" onclick="executeQuery()">
+                    <sl-icon slot="prefix" name="search"></sl-icon>
+                    Execute Query
+                </sl-button>
+            </div>
+            <div>
+                <label><strong>Example Filters:</strong></label>
+                <div style="margin-top: 10px;">
+                    <sl-tag size="medium" onclick="setFilter('.title')" style="margin-right: 5px; cursor: pointer;">.title</sl-tag>
+                    <sl-tag size="medium" onclick="setFilter('.title | contains(\"feather\")')" style="margin-right: 5px; cursor: pointer;">.title | contains("feather")</sl-tag>
+                    <sl-tag size="medium" onclick="setFilter('.gtin')" style="margin-right: 5px; cursor: pointer;">.gtin</sl-tag>
+                    <sl-tag size="medium" onclick="setFilter('keys')" style="margin-right: 5px; cursor: pointer;">keys</sl-tag>
+                </div>
+                <div style="margin-top: 15px;">
+                    <label><strong>Operations:</strong></label>
+                    <div style="margin-top: 10px;">
+                        <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">.field - Get field</sl-tag>
+                        <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">.field[] - Explode array</sl-tag>
+                        <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">| func - Pipe to function</sl-tag>
+                        <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">[] - Flatten</sl-tag>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </sl-card>
+
+    <div class="results-section">
+        <sl-card>
+            <div slot="header">
+                <strong>Query Results</strong>
+                <span id="resultCount" style="margin-left: 10px; font-weight: normal;"></span>
+            </div>
+            <div id="results" class="json-display">
+                <p style="color: #666;">Execute a query to see results...</p>
+            </div>
+        </sl-card>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000';
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('API Error:', error);
+                throw error;
+            }
+        }
+
+        async function loadJsonFiles() {
+            const loadResult = document.getElementById('loadResult');
+            loadResult.innerHTML = '<sl-spinner></sl-spinner> Loading JSON files...';
+
+            try {
+                const result = await apiCall('/load', 'POST');
+
+                let message = `<div class="success-message">✓ Loaded ${result.total_objects} objects from ${result.loaded_files.length} files!</div>`;
+
+                if (result.errors.length > 0) {
+                    message += `<div class="error-message"><strong>Errors encountered:</strong><br>` +
+                        result.errors.join('<br>') + '</div>';
+                }
+
+                loadResult.innerHTML = message;
+
+                await loadStats();
+                await loadFiles();
+            } catch (error) {
+                loadResult.innerHTML = `<div class="error-message">✗ Error loading files: ${error.message}</div>`;
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const stats = await apiCall('/stats');
+                document.getElementById('totalObjects').textContent = stats.total_objects;
+                document.getElementById('totalFiles').textContent = stats.total_files;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadFiles() {
+            try {
+                const files = await apiCall('/files');
+                const select = document.getElementById('sourceFile');
+                select.innerHTML = '<sl-option value="">All Files</sl-option>';
+
+                files.forEach(file => {
+                    const option = document.createElement('sl-option');
+                    option.value = file;
+                    option.textContent = file;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading files:', error);
+            }
+        }
+
+        async function executeQuery() {
+            const filter = document.getElementById('filter').value;
+            const sourceFile = document.getElementById('sourceFile').value || null;
+            const limit = parseInt(document.getElementById('limit').value) || 50;
+
+            const params = new URLSearchParams();
+            if (filter) params.append('filter', filter);
+            if (sourceFile) params.append('source_file', sourceFile);
+            params.append('limit', limit);
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<sl-spinner></sl-spinner> Executing query...';
+
+            try {
+                const objects = await apiCall(`/query?${params.toString()}`);
+                displayResults(objects);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error-message">✗ Query error: ${error.message}</div>`;
+            }
+        }
+
+        function displayResults(objects) {
+            const resultsDiv = document.getElementById('results');
+            const resultCount = document.getElementById('resultCount');
+
+            resultCount.textContent = `(Found ${objects.length} objects)`;
+
+            if (objects.length === 0) {
+                resultsDiv.innerHTML = '<p style="color: #666;">No objects found matching your query.</p>';
+                return;
+            }
+
+            let html = '';
+            objects.forEach(obj => {
+                const jsonData = JSON.parse(obj.json_data);
+                html += `
+                    <div class="object-item">
+                        <div class="object-header">
+                            <strong>ID: ${obj.id}</strong>
+                            <sl-tag size="small">${obj.source_file}</sl-tag>
+                        </div>
+                        <div class="file-info">
+                            <sl-icon name="file-earmark"></sl-icon>
+                            <small>Modified: ${new Date(parseInt(obj.modified_at) * 1000).toLocaleString()}</small>
+                        </div>
+                        <div class="object-content">
+                            <pre>${JSON.stringify(jsonData, null, 2)}</pre>
+                        </div>
+                    </div>
+                `;
+            });
+
+            resultsDiv.innerHTML = html;
+        }
+
+        function setFilter(filter) {
+            document.getElementById('filter').value = filter;
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadStats();
+            await loadFiles();
+        });
+#[derive(Debug, Deserialize)]
+struct QueryDslRequest {
+    query: String,
+}
+
+#[derive(Debug, Serialize)]
+struct QueryDslResponse {
+    success: bool,
+    columns: Vec<String>,
+    rows: Vec<Vec<serde_json::Value>>,
+    total_count: usize,
+    error: Option<String>,
+}
+
+async fn query_dsl(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<QueryDslRequest>,
+) -> Result<Json<QueryDslResponse>, StatusCode> {
+    let db = state.db.lock().unwrap();
+    
+    match execute_query(&db, &request.query) {
+        Ok(result) => Ok(Json(QueryDslResponse {
+            success: true,
+            columns: result.columns,
+            rows: result.rows,
+            total_count: result.total_count,
+            error: None,
+        })),
+        Err(e) => Ok(Json(QueryDslResponse {
+            success: false,
+            columns: vec![],
+            rows: vec![],
+            total_count: 0,
+            error: Some(e.to_string()),
+        })),
+    }
+}
+
+fn html_page() -> String {
+    r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAQ JSON Loader & Query Tool</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.17.1/cdn/themes/light.css">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.17.1/cdn/shoelace-autoloader.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            min-width: 150px;
+        }
+        .stat-card h3 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .stat-card p {
+            margin: 0;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .query-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .results-section {
+            margin-top: 20px;
+        }
+        .json-display {
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .file-info {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #e8f4f8;
+            border-radius: 4px;
+        }
+        .object-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        .object-header {
+            background: #f5f5f5;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .object-content {
+            padding: 15px;
+        }
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success-message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        sl-card {
+            margin-bottom: 20px;
+        }
+        
+        /* Query Builder Styles */
+        .query-builder {
+            display: grid;
+            gap: 20px;
+        }
+        .query-section-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .query-editor {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            min-height: 200px;
+        }
+        .join-builder {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .field-row {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 10px;
+        }
+        .field-row sl-input, .field-row sl-select {
+            flex: 1;
+        }
+        .remove-btn {
+            color: #dc3545;
+            cursor: pointer;
+        }
+        
+        /* Resizable Table Styles */
+        .table-container {
+            overflow-x: auto;
+            resize: both;
+            min-height: 200px;
+            max-height: 800px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .result-table th {
+            background: #f5f5f5;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #ddd;
+            position: sticky;
+            top: 0;
+            white-space: nowrap;
+        }
+        .result-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eee;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .result-table tr:hover {
+            background: #f8f9fa;
+        }
+        .result-table td:hover {
+            overflow: visible;
+            white-space: normal;
+            word-break: break-word;
+        }
+        .null-value {
+            color: #999;
+            font-style: italic;
+        }
+        .tabs-container {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 JAQ JSON Loader & Query Tool</h1>
+        <sl-button variant="primary" size="large" onclick="loadJsonFiles()">
+            <sl-icon slot="prefix" name="upload"></sl-icon>
+            Load JSON Files
+        </sl-button>
+    </div>
+
+    <div id="loadResult"></div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <h3>Total Objects</h3>
+            <p id="totalObjects">-</p>
+        </div>
+        <div class="stat-card">
+            <h3>Files Loaded</h3>
+            <p id="totalFiles">-</p>
+        </div>
+    </div>
+
+    <sl-tabs class="tabs-container">
+        <sl-tab slot="nav" panel="simple">Simple Query</sl-tab>
+        <sl-tab slot="nav" panel="advanced">Advanced Join Query</sl-tab>
+        
+        <sl-tab-panel name="simple">
+            <sl-card>
+                <div slot="header">
+                    <strong>Simple Query Builder</strong>
+                </div>
+                <div class="query-section">
+                    <div>
+                        <div class="input-group">
+                            <label for="filter">JAQ Filter (optional):</label>
+                            <sl-input id="filter" placeholder="e.g., .title | contains(&quot;feather&quot;)" size="medium"></sl-input>
+                        </div>
+                        <div class="input-group">
+                            <label for="sourceFile">Source File (optional):</label>
+                            <sl-select id="sourceFile" placeholder="Select a file" size="medium" clearable>
+                                <sl-option value="">All Files</sl-option>
+                            </sl-select>
+                        </div>
+                        <div class="input-group">
+                            <label for="limit">Limit (optional):</label>
+                            <sl-input id="limit" type="number" value="50" size="medium"></sl-input>
+                        </div>
+                        <sl-button variant="success" size="large" onclick="executeQuery()">
+                            <sl-icon slot="prefix" name="search"></sl-icon>
+                            Execute Query
+                        </sl-button>
+                    </div>
+                    <div>
+                        <label><strong>Example Filters:</strong></label>
+                        <div style="margin-top: 10px;">
+                            <sl-tag size="medium" onclick="setFilter('.title')" style="margin-right: 5px; cursor: pointer;">.title</sl-tag>
+                            <sl-tag size="medium" onclick="setFilter('.title | contains(&quot;feather&quot;)')" style="margin-right: 5px; cursor: pointer;">.title | contains("feather")</sl-tag>
+                            <sl-tag size="medium" onclick="setFilter('.gtin')" style="margin-right: 5px; cursor: pointer;">.gtin</sl-tag>
+                            <sl-tag size="medium" onclick="setFilter('keys')" style="margin-right: 5px; cursor: pointer;">keys</sl-tag>
+                        </div>
+                        <div style="margin-top: 15px;">
+                            <label><strong>Operations:</strong></label>
+                            <div style="margin-top: 10px;">
+                                <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">.field - Get field</sl-tag>
+                                <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">.field[] - Explode array</sl-tag>
+                                <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">| func - Pipe to function</sl-tag>
+                                <sl-tag size="medium" variant="neutral" style="margin-right: 5px;">[] - Flatten</sl-tag>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </sl-card>
+            
+            <div class="results-section">
+                <sl-card>
+                    <div slot="header">
+                        <strong>Query Results</strong>
+                        <span id="resultCount" style="margin-left: 10px; font-weight: normal;"></span>
+                    </div>
+                    <div id="results" class="json-display">
+                        <p style="color: #666;">Execute a query to see results...</p>
+                    </div>
+                </sl-card>
+            </div>
+        </sl-tab-panel>
+        
+        <sl-tab-panel name="advanced">
+            <sl-card>
+                <div slot="header">
+                    <strong>Advanced Join Query Builder</strong>
+                    <span style="margin-left: 10px; color: #666; font-size: 14px;">Join and transform JSON data across files</span>
+                </div>
+                
+                <div class="query-builder">
+                    <!-- FROM Section -->
+                    <div>
+                        <div class="query-section-title">
+                            <sl-icon name="database"></sl-icon>
+                            FROM (Primary Source)
+                        </div>
+                        <div class="field-row">
+                            <sl-select id="dslFromSource" placeholder="Select source file" size="medium">
+                                <sl-option value="">Select a file...</sl-option>
+                            </sl-select>
+                            <sl-input id="dslFromAlias" placeholder="Alias (optional)" size="medium" value="primary"></sl-input>
+                        </div>
+                    </div>
+                    
+                    <!-- JOIN Section -->
+                    <div>
+                        <div class="query-section-title">
+                            <sl-icon name="link"></sl-icon>
+                            JOIN (Optional)
+                        </div>
+                        <div id="joinsContainer">
+                            <!-- Joins will be added here -->
+                        </div>
+                        <sl-button variant="neutral" size="small" onclick="addJoin()">
+                            <sl-icon slot="prefix" name="plus"></sl-icon>
+                            Add Join
+                        </sl-button>
+                    </div>
+                    
+                    <!-- WHERE Section -->
+                    <div>
+                        <div class="query-section-title">
+                            <sl-icon name="funnel"></sl-icon>
+                            WHERE (Filters)
+                        </div>
+                        <div id="whereContainer">
+                            <!-- Filters will be added here -->
+                        </div>
+                        <sl-button variant="neutral" size="small" onclick="addWhere()">
+                            <sl-icon slot="prefix" name="plus"></sl-icon>
+                            Add Filter
+                        </sl-button>
+                    </div>
+                    
+                    <!-- SELECT Section -->
+                    <div>
+                        <div class="query-section-title">
+                            <sl-icon name="list-columns"></sl-icon>
+                            SELECT (Fields to Return)
+                        </div>
+                        <div id="selectContainer">
+                            <!-- Select fields will be added here -->
+                        </div>
+                        <sl-button variant="neutral" size="small" onclick="addSelectField()">
+                            <sl-icon slot="prefix" name="plus"></sl-icon>
+                            Add Field
+                        </sl-button>
+                    </div>
+                    
+                    <!-- Options -->
+                    <div>
+                        <sl-checkbox id="dslFlatten">Flatten arrays (explode nested arrays into rows)</sl-checkbox>
+                        <div style="margin-top: 10px;">
+                            <sl-input id="dslLimit" type="number" value="100" label="Limit results" style="max-width: 200px;"></sl-input>
+                        </div>
+                    </div>
+                    
+                    <!-- Query Preview -->
+                    <div>
+                        <div class="query-section-title">
+                            <sl-icon name="code"></sl-icon>
+                            Query JSON (Preview)
+                        </div>
+                        <sl-textarea id="dslQueryPreview" class="query-editor" readonly></sl-textarea>
+                    </div>
+                    
+                    <sl-button variant="primary" size="large" onclick="executeDslQuery()">
+                        <sl-icon slot="prefix" name="play"></sl-icon>
+                        Execute Join Query
+                    </sl-button>
+                </div>
+            </sl-card>
+            
+            <div class="results-section">
+                <sl-card>
+                    <div slot="header">
+                        <strong>Query Results</strong>
+                        <span id="dslResultCount" style="margin-left: 10px; font-weight: normal;"></span>
+                    </div>
+                    <div id="dslResults">
+                        <p style="color: #666;">Execute a query to see results in a resizable table...</p>
+                    </div>
+                </sl-card>
+            </div>
+        </sl-tab-panel>
+    </sl-tabs>
+
+    <script>
+        const API_BASE = 'http://localhost:3000';
+        let availableFiles = [];
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('API Error:', error);
+                throw error;
+            }
+        }
+
+        async function loadJsonFiles() {
+            const loadResult = document.getElementById('loadResult');
+            loadResult.innerHTML = '<sl-spinner></sl-spinner> Loading JSON files...';
+
+            try {
+                const result = await apiCall('/load', 'POST');
+
+                let message = `<div class="success-message">&#10003; Loaded ${result.total_objects} objects from ${result.loaded_files.length} files!</div>`;
+
+                if (result.errors.length > 0) {
+                    message += `<div class="error-message"><strong>Errors encountered:</strong><br>` +
+                        result.errors.join('<br>') + '</div>';
+                }
+
+                loadResult.innerHTML = message;
+
+                await loadStats();
+                await loadFiles();
+            } catch (error) {
+                loadResult.innerHTML = `<div class="error-message">&#10007; Error loading files: ${error.message}</div>`;
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const stats = await apiCall('/stats');
+                document.getElementById('totalObjects').textContent = stats.total_objects;
+                document.getElementById('totalFiles').textContent = stats.total_files;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadFiles() {
+            try {
+                const files = await apiCall('/files');
+                availableFiles = files;
+                
+                // Update simple query select
+                const select = document.getElementById('sourceFile');
+                select.innerHTML = '<sl-option value="">All Files</sl-option>';
+
+                files.forEach(file => {
+                    const option = document.createElement('sl-option');
+                    option.value = file;
+                    option.textContent = file;
+                    select.appendChild(option);
+                });
+                
+                // Update DSL query selects
+                const dslFrom = document.getElementById('dslFromSource');
+                dslFrom.innerHTML = '<sl-option value="">Select a file...</sl-option>';
+                files.forEach(file => {
+                    const option = document.createElement('sl-option');
+                    option.value = file;
+                    option.textContent = file;
+                    dslFrom.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading files:', error);
+            }
+        }
+
+        async function executeQuery() {
+            const filter = document.getElementById('filter').value;
+            const sourceFile = document.getElementById('sourceFile').value || null;
+            const limit = parseInt(document.getElementById('limit').value) || 50;
+
+            const params = new URLSearchParams();
+            if (filter) params.append('filter', filter);
+            if (sourceFile) params.append('source_file', sourceFile);
+            params.append('limit', limit);
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<sl-spinner></sl-spinner> Executing query...';
+
+            try {
+                const objects = await apiCall(`/query?${params.toString()}`);
+                displayResults(objects);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error-message">&#10007; Query error: ${error.message}</div>`;
+            }
+        }
+
+        function displayResults(objects) {
+            const resultsDiv = document.getElementById('results');
+            const resultCount = document.getElementById('resultCount');
+
+            resultCount.textContent = `(Found ${objects.length} objects)`;
+
+            if (objects.length === 0) {
+                resultsDiv.innerHTML = '<p style="color: #666;">No objects found matching your query.</p>';
+                return;
+            }
+
+            let html = '';
+            objects.forEach(obj => {
+                const jsonData = JSON.parse(obj.json_data);
+                html += `
+                    <div class="object-item">
+                        <div class="object-header">
+                            <strong>ID: ${obj.id}</strong>
+                            <sl-tag size="small">${obj.source_file}</sl-tag>
+                        </div>
+                        <div class="file-info">
+                            <sl-icon name="file-earmark"></sl-icon>
+                            <small>Modified: ${new Date(parseInt(obj.modified_at) * 1000).toLocaleString()}</small>
+                        </div>
+                        <div class="object-content">
+                            <pre>${JSON.stringify(jsonData, null, 2)}</pre>
+                        </div>
+                    </div>
+                `;
+            });
+
+            resultsDiv.innerHTML = html;
+        }
+
+        function setFilter(filter) {
+            document.getElementById('filter').value = filter;
+        }
+
+        // DSL Query Builder Functions
+        let joinCount = 0;
+        let whereCount = 0;
+        let selectCount = 0;
+
+        function addJoin() {
+            joinCount++;
+            const container = document.getElementById('joinsContainer');
+            const joinDiv = document.createElement('div');
+            joinDiv.className = 'join-builder';
+            joinDiv.id = `join-${joinCount}`;
+            
+            const fileOptions = availableFiles.map(f => `<sl-option value="${f}">${f}</sl-option>`).join('');
+            
+            joinDiv.innerHTML = `
+                <div class="field-row">
+                    <sl-select id="joinSource-${joinCount}" placeholder="Join source file" size="medium">
+                        ${fileOptions}
+                    </sl-select>
+                    <sl-input id="joinAlias-${joinCount}" placeholder="Alias" size="medium" value="join${joinCount}"></sl-input>
+                    <sl-select id="joinType-${joinCount}" value="inner" size="medium" style="width: 120px;">
+                        <sl-option value="inner">Inner</sl-option>
+                        <sl-option value="left">Left</sl-option>
+                    </sl-select>
+                    <sl-icon-button name="x-lg" class="remove-btn" onclick="removeJoin(${joinCount})"></sl-icon-button>
+                </div>
+                <div class="field-row">
+                    <sl-input id="joinLeft-${joinCount}" placeholder="Left field (e.g., primary.mpn)" size="medium"></sl-input>
+                    <span style="padding-bottom: 8px;">=</span>
+                    <sl-input id="joinRight-${joinCount}" placeholder="Right field (e.g., join1.variants[].sku)" size="medium"></sl-input>
+                </div>
+            `;
+            container.appendChild(joinDiv);
+            updateQueryPreview();
+        }
+
+        function removeJoin(id) {
+            const joinDiv = document.getElementById(`join-${id}`);
+            if (joinDiv) joinDiv.remove();
+            updateQueryPreview();
+        }
+
+        function addWhere() {
+            whereCount++;
+            const container = document.getElementById('whereContainer');
+            const whereDiv = document.createElement('div');
+            whereDiv.className = 'field-row';
+            whereDiv.id = `where-${whereCount}`;
+            whereDiv.innerHTML = `
+                <sl-input id="whereField-${whereCount}" placeholder="Field (e.g., join1.status)" size="medium"></sl-input>
+                <sl-select id="whereOp-${whereCount}" value="=" size="medium" style="width: 140px;">
+                    <sl-option value="=">=</sl-option>
+                    <sl-option value="!=">!=</sl-option>
+                    <sl-option value="contains">contains</sl-option>
+                    <sl-option value="starts_with">starts_with</sl-option>
+                    <sl-option value="exists">exists</sl-option>
+                </sl-select>
+                <sl-input id="whereValue-${whereCount}" placeholder="Value" size="medium"></sl-input>
+                <sl-icon-button name="x-lg" class="remove-btn" onclick="removeWhere(${whereCount})"></sl-icon-button>
+            `;
+            container.appendChild(whereDiv);
+            updateQueryPreview();
+        }
+
+        function removeWhere(id) {
+            const whereDiv = document.getElementById(`where-${id}`);
+            if (whereDiv) whereDiv.remove();
+            updateQueryPreview();
+        }
+
+        function addSelectField() {
+            selectCount++;
+            const container = document.getElementById('selectContainer');
+            const selectDiv = document.createElement('div');
+            selectDiv.className = 'field-row';
+            selectDiv.id = `select-${selectCount}`;
+            selectDiv.innerHTML = `
+                <sl-input id="selectExpr-${selectCount}" placeholder="Field expression (e.g., primary.title)" size="medium"></sl-input>
+                <sl-input id="selectAlias-${selectCount}" placeholder="Output column name" size="medium"></sl-input>
+                <sl-select id="selectTransform-${selectCount}" placeholder="Transform" clearable size="medium" style="width: 120px;">
+                    <sl-option value="">None</sl-option>
+                    <sl-option value="upper">UPPERCASE</sl-option>
+                    <sl-option value="lower">lowercase</sl-option>
+                </sl-select>
+                <sl-icon-button name="x-lg" class="remove-btn" onclick="removeSelectField(${selectCount})"></sl-icon-button>
+            `;
+            container.appendChild(selectDiv);
+            updateQueryPreview();
+        }
+
+        function removeSelectField(id) {
+            const selectDiv = document.getElementById(`select-${id}`);
+            if (selectDiv) selectDiv.remove();
+            updateQueryPreview();
+        }
+
+        function buildQuery() {
+            const fromSource = document.getElementById('dslFromSource').value;
+            const fromAlias = document.getElementById('dslFromAlias').value || 'primary';
+            
+            if (!fromSource) return null;
+            
+            const query = {
+                from: {
+                    source_file: fromSource,
+                    alias: fromAlias
+                },
+                joins: [],
+                where: [],
+                select: [],
+                flatten: document.getElementById('dslFlatten').checked,
+                limit: parseInt(document.getElementById('dslLimit').value) || 100
+            };
+            
+            // Build joins
+            for (let i = 1; i <= joinCount; i++) {
+                const joinDiv = document.getElementById(`join-${i}`);
+                if (!joinDiv) continue;
+                
+                const source = document.getElementById(`joinSource-${i}`).value;
+                const alias = document.getElementById(`joinAlias-${i}`).value;
+                const joinType = document.getElementById(`joinType-${i}`).value;
+                const left = document.getElementById(`joinLeft-${i}`).value;
+                const right = document.getElementById(`joinRight-${i}`).value;
+                
+                if (source && left && right) {
+                    query.joins.push({
+                        source: { source_file: source, alias: alias },
+                        on: { left, right },
+                        join_type: joinType
+                    });
+                }
+            }
+            
+            // Build where
+            for (let i = 1; i <= whereCount; i++) {
+                const whereDiv = document.getElementById(`where-${i}`);
+                if (!whereDiv) continue;
+                
+                const field = document.getElementById(`whereField-${i}`).value;
+                const op = document.getElementById(`whereOp-${i}`).value;
+                let value = document.getElementById(`whereValue-${i}`).value;
+                
+                if (field) {
+                    // Try to parse as number if possible
+                    if (!isNaN(value) && value !== '') {
+                        value = parseFloat(value);
+                    }
+                    query.where.push({ field, op, value });
+                }
+            }
+            
+            // Build select
+            for (let i = 1; i <= selectCount; i++) {
+                const selectDiv = document.getElementById(`select-${i}`);
+                if (!selectDiv) continue;
+                
+                const expr = document.getElementById(`selectExpr-${i}`).value;
+                const alias = document.getElementById(`selectAlias-${i}`).value;
+                const transform = document.getElementById(`selectTransform-${i}`).value;
+                
+                if (expr) {
+                    const field = { expr };
+                    if (alias) field.alias = alias;
+                    if (transform) field.transform = transform;
+                    query.select.push(field);
+                }
+            }
+            
+            return query;
+        }
+
+        function updateQueryPreview() {
+            const query = buildQuery();
+            if (query) {
+                document.getElementById('dslQueryPreview').value = JSON.stringify(query, null, 2);
+            }
+        }
+
+        async function executeDslQuery() {
+            const query = buildQuery();
+            if (!query) {
+                alert('Please select a primary source file');
+                return;
+            }
+            
+            const resultsDiv = document.getElementById('dslResults');
+            resultsDiv.innerHTML = '<sl-spinner></sl-spinner> Executing query...';
+
+            try {
+                const response = await apiCall('/query/dsl', 'POST', { query: JSON.stringify(query) });
+                
+                if (response.success) {
+                    displayDslResults(response);
+                } else {
+                    resultsDiv.innerHTML = `<div class="error-message">&#10007; Query error: ${response.error}</div>`;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error-message">&#10007; Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayDslResults(result) {
+            const resultsDiv = document.getElementById('dslResults');
+            const resultCount = document.getElementById('dslResultCount');
+            
+            resultCount.textContent = `(Found ${result.total_count} rows, showing ${result.rows.length})`;
+            
+            if (result.rows.length === 0) {
+                resultsDiv.innerHTML = '<p style="color: #666;">No results found.</p>';
+                return;
+            }
+            
+            // Build resizable table
+            let html = '<div class="table-container"><table class="result-table"><thead><tr>';
+            
+            // Headers
+            result.columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // Rows
+            result.rows.forEach(row => {
+                html += '<tr>';
+                row.forEach(cell => {
+                    let displayValue;
+                    if (cell === null) {
+                        displayValue = '<span class="null-value">null</span>';
+                    } else if (typeof cell === 'object') {
+                        displayValue = JSON.stringify(cell);
+                    } else {
+                        displayValue = String(cell);
+                    }
+                    html += `<td title="${displayValue.replace(/"/g, '&quot;')}">${displayValue}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div>';
+            resultsDiv.innerHTML = html;
+        }
+
+        // Update query preview on input changes
+        document.addEventListener('input', function(e) {
+            if (e.target.id.startsWith('dsl') || e.target.id.startsWith('join') || 
+                e.target.id.startsWith('where') || e.target.id.startsWith('select')) {
+                updateQueryPreview();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadStats();
+            await loadFiles();
+            
+            // Add some default example fields
+            addSelectField();
+            document.getElementById('selectExpr-1').value = 'primary.title';
+            document.getElementById('selectAlias-1').value = 'Title';
+            
+            addSelectField();
+            document.getElementById('selectExpr-2').value = 'primary.mpn';
+            document.getElementById('selectAlias-2').value = 'MPN';
+        });
+    </script>
+</body>
+</html>
+    "#
+    .to_string()
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+    info!("Starting JSON Loader Server");
+
+    let conn = init_database().context("Failed to initialize database")?;
+    info!("Database initialized at {}", DB_PATH);
+
+    let state = Arc::new(AppState {
+        db: Arc::new(Mutex::new(conn)),
+    });
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let app = Router::new()
+        .route("/", get(|| async { Html(html_page()) }))
+        .route("/load", post(load_json_files))
+        .route("/stats", get(get_stats))
+        .route("/files", get(get_files))
+        .route("/query", get(query_objects))
+        .route("/query/dsl", post(query_dsl))
+        .layer(cors)
+        .with_state(state);
+
+    info!("Server listening on http://0.0.0.0:3000");
+    
+    axum::Server::bind(&"0.0.0.0:3000".parse()?)
+        .serve(app.into_make_service())
+        .await?;
+
+    Ok(())
+}

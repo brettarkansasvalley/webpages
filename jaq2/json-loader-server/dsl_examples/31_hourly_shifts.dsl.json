@@ -1,0 +1,25 @@
+{
+  "_description": "Shifts by hour of day - demonstrates date functions",
+  "_csv_source": "hourly_sales_daily.csv pattern",
+  "_feature": "date_functions",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_timeEntries_20260130.json",
+      "alias": "te"
+    },
+    "where": [
+      {"field": "te.inDate", "op": "is_not_null"}
+    ],
+    "group_by": [
+      {"field": "hour(te.inDate)", "alias": "hour"}
+    ],
+    "select": [
+      {"expr": "hour(te.inDate)", "alias": "hour"},
+      {"expr": "te.guid", "alias": "shift_count", "agg": "count"},
+      {"expr": "sum(te.regularHours)", "alias": "total_hours"}
+    ],
+    "order_by": [
+      {"field": "hour", "direction": "asc"}
+    ]
+  }
+}

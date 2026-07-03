@@ -1,0 +1,16 @@
+{
+  "_description": "List all order GUIDs from primitive value records",
+  "_csv_source": "orders_v2_orders_20260130.json",
+  "_feature": "primitive_value",
+  "query": {
+    "from": {
+      "source_file": "orders_v2_orders_20260130.json",
+      "alias": "o",
+      "as_primitive": "guid"
+    },
+    "select": [
+      {"expr": "o.guid", "alias": "order_guid"}
+    ],
+    "limit": 100
+  }
+}

@@ -1,0 +1,1730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toasty - Toast Data Analytics</title>
+    
+    <!-- Shoelace Web Components -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.17.1/cdn/themes/light.css">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.17.1/cdn/shoelace.js"></script>
+    
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <style>
+        :root {
+            --header-height: 60px;
+            --sidebar-width: 260px;
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        /* Header */
+        .app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--header-height);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .app-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .app-header sl-icon { font-size: 28px; }
+        
+        .header-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+        }
+        
+        .connection-status.connected { background: rgba(76, 175, 80, 0.3); }
+        .connection-status.error { background: rgba(244, 67, 54, 0.3); }
+        
+        /* Layout */
+        .app-container {
+            display: flex;
+            margin-top: var(--header-height);
+            min-height: calc(100vh - var(--header-height));
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: white;
+            border-right: 1px solid #e0e0e0;
+            padding: 20px 0;
+            position: fixed;
+            top: var(--header-height);
+            bottom: 0;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        
+        .nav-section { margin-bottom: 24px; }
+        
+        .nav-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #666;
+            padding: 0 20px;
+            margin-bottom: 8px;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: #333;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        
+        .nav-item:hover { background: #f5f5f5; color: #667eea; }
+        .nav-item.active { background: #f0f4ff; color: #667eea; border-left-color: #667eea; }
+        .nav-item sl-icon { font-size: 20px; }
+        
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 24px;
+        }
+        
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        /* Page Header */
+        .page-header { margin-bottom: 24px; }
+        .page-header h2 { margin: 0 0 8px 0; font-size: 28px; color: #333; }
+        .page-header p { margin: 0; color: #666; }
+        
+        /* Cards */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .metric-card .metric-label {
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        
+        .metric-card .metric-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+        }
+        
+        /* Form Cards */
+        .form-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+        
+        .form-card h3 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            color: #333;
+            border-bottom: 1px solid #f0f0f0;
+            padding-bottom: 12px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        
+        .form-field { flex: 1; min-width: 200px; }
+        
+        /* Bucket Status Styles */
+        .bucket-status-unpushed {
+            border-left: 4px solid #999 !important;
+            background: #f8f8f8 !important;
+        }
+        .bucket-status-unpushed::part(base) {
+            background: #f8f8f8;
+            border-left: 4px solid #999;
+        }
+        
+        .bucket-status-pushed {
+            border-left: 4px solid #e65100 !important;
+            background: #fff3e0 !important;
+        }
+        .bucket-status-pushed::part(base) {
+            background: #fff3e0 !important;
+            border-left: 4px solid #e65100;
+            border-color: #e65100;
+        }
+        
+        .bucket-status-committed {
+            border-left: 4px solid #2e7d32 !important;
+            background: #e8f5e9 !important;
+        }
+        .bucket-status-committed::part(base) {
+            background: #e8f5e9 !important;
+            border-left: 4px solid #2e7d32;
+            border-color: #2e7d32;
+        }
+        
+        .status-legend {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            font-size: 12px;
+            color: #666;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+        
+        .status-pill.unpushed {
+            border-color: #999;
+            background: #f8f8f8;
+        }
+        
+        .status-pill.pushed {
+            border-color: #e65100;
+            background: #fff3e0;
+            color: #e65100;
+        }
+        
+        .status-pill.committed {
+            border-color: #2e7d32;
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        /* Report Cards */
+        .report-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        
+        .report-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            border-color: #667eea;
+        }
+        
+        .report-card .report-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+        
+        .report-card h3 { margin: 0 0 8px 0; font-size: 18px; color: #333; }
+        .report-card p { margin: 0; font-size: 14px; color: #666; line-height: 1.5; }
+        
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            max-height: 400px;
+            width: 100%;
+        }
+        
+        .chart-container canvas {
+            max-height: 100% !important;
+        }
+        
+        /* Data Table */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        
+        .table-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .table-header h3 { margin: 0; font-size: 18px; }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .data-table th {
+            background: #f8f9fa;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .data-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+        
+        .data-table tr:hover { background: #f8f9fa; }
+        .data-table .null-value { color: #999; font-style: italic; }
+        .data-table .num-right { text-align: right; }
+        
+        /* Bartender Tips Page */
+        #bartenderPreviewTable {
+            table-layout: auto;
+            width: 100%;
+        }
+        
+        #bartenderPreviewTable th,
+        #bartenderPreviewTable td {
+            padding: 8px 6px;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        
+        #bartenderPreviewTable th:nth-child(1) { width: 15%; } /* Bartender name */
+        #bartenderPreviewTable th:nth-child(2),
+        #bartenderPreviewTable th:nth-child(3),
+        #bartenderPreviewTable th:nth-child(4),
+        #bartenderPreviewTable th:nth-child(5),
+        #bartenderPreviewTable th:nth-child(6),
+        #bartenderPreviewTable th:nth-child(7) { width: 9%; } /* Amounts */
+        #bartenderPreviewTable th:nth-child(8),
+        #bartenderPreviewTable th:nth-child(9) { width: 14%; } /* Pushed/Committed */
+        #bartenderPreviewTable th:nth-child(10) { width: 12%; } /* Actions */
+        
+        #bartenderPreviewTable td.status-pushed,
+        #bartenderPreviewTable td.status-committed {
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        
+        #bartenderPreviewTable td.status-pushed.has-unpaid {
+            background-color: #fef9c3; /* yellow-100 */
+        }
+        
+        #bartenderPreviewTable td.status-committed.has-committed {
+            background-color: #d1fae5; /* emerald-100 */
+        }
+        
+        #bartendersList sl-checkbox {
+            display: block;
+            margin: 6px 0;
+        }
+        
+        /* Assignment Lists */
+        .assignment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+        
+        .assignment-box {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            background: #fafafa;
+        }
+        
+        .assignment-box h4 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .assignment-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .assignment-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+        }
+        
+        .assignment-count {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+        }
+        
+        /* Distribution Preview */
+        .preview-meta {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            background: #e3f2fd;
+            color: #1976d2;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .kpi {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: #e8f5e9;
+            color: #388e3c;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(4px);
+        }
+        
+        .loading-content { text-align: center; }
+        .loading-content sl-spinner { font-size: 48px; --track-width: 4px; }
+        .loading-content p { margin-top: 16px; color: #666; }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state sl-icon { font-size: 64px; color: #ddd; margin-bottom: 16px; }
+        .empty-state h3 { margin: 0 0 8px 0; color: #333; }
+        .empty-state p { margin: 0; max-width: 400px; margin: 0 auto; }
+        
+        /* Status badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-badge.status-unpushed { background: #f5f5f5; color: #666; border: 1px solid #999; }
+        .status-badge.status-pushed { background: #fff3e0; color: #e65100; border: 1px solid #e65100; }
+        .status-badge.status-committed { background: #e8f5e9; color: #2e7d32; border: 1px solid #2e7d32; }
+        
+        /* Bucket buttons */
+        .bucket-btn {
+            padding: 8px 16px;
+            margin: 4px;
+            border: 1px solid #ccc;
+            background: #f8f8f8;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .bucket-btn:hover { background: #f0f0f0; }
+        .bucket-btn.selected {
+            border-width: 3px;
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        /* Quick Jump Links */
+        .nav-link {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #f5f5f5;
+            border-radius: 16px;
+            text-decoration: none;
+            color: #667eea;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        /* Calendar Styles */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+        
+        .calendar-header {
+            text-align: center;
+            font-weight: 600;
+            font-size: 13px;
+            color: #666;
+            padding: 8px;
+            text-transform: uppercase;
+        }
+        
+        .calendar-day {
+            min-height: 90px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 6px 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 80px;
+        }
+        
+        .calendar-day:hover {
+            background: #f5f5f5;
+            border-color: #667eea;
+        }
+        
+        .calendar-day.has-data {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+        
+        .calendar-day.has-data:hover {
+            background: #bbdefb;
+        }
+        
+        .calendar-day.selected {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .calendar-day.other-month {
+            opacity: 0.4;
+            background: #f9f9f9;
+        }
+        
+        .calendar-day-number {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .calendar-day-info {
+            font-size: 11px;
+            text-align: center;
+            color: inherit;
+            opacity: 0.8;
+        }
+        
+        .calendar-day.selected .calendar-day-info {
+            color: white;
+        }
+        
+        /* Calendar Stats */
+        .calendar-stats {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            margin-top: 2px;
+        }
+        
+        .calendar-stat-count {
+            font-size: 10px;
+            font-weight: 600;
+            color: #1976d2;
+            background: rgba(25, 118, 210, 0.15);
+            padding: 1px 6px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+        
+        .calendar-stat-total {
+            font-size: 10px;
+            font-weight: 700;
+            color: #2e7d32;
+            background: rgba(46, 125, 50, 0.15);
+            padding: 1px 6px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+        
+        .calendar-day.selected .calendar-stat-count {
+            color: white;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .calendar-day.selected .calendar-stat-total {
+            color: white;
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .calendar-day:not(.has-data) .calendar-stats {
+            display: none;
+        }
+        
+        /* Workers Grid */
+        .workers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        
+        .worker-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            background: white;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        
+        .worker-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+        
+        .worker-card.selected {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .worker-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .worker-shifts {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .worker-locations {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+        
+        .location-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            background: #e3f2fd;
+            color: #1976d2;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .worker-hours {
+            font-size: 13px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); transition: transform 0.3s; }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0; }
+            .card-grid { grid-template-columns: 1fr; }
+            .calendar-grid { grid-template-columns: repeat(7, 1fr); gap: 4px; }
+            .calendar-day { min-height: 50px; padding: 4px; }
+            .workers-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <h1>
+            <sl-icon name="cup-hot"></sl-icon>
+            Toasty
+        </h1>
+        <div class="header-actions">
+            <sl-dropdown>
+                <sl-button slot="trigger" variant="neutral" size="small" caret>
+                    <sl-icon slot="prefix" name="list"></sl-icon>
+                    Jump to
+                </sl-button>
+                <sl-menu>
+                    <sl-menu-item onclick="showPage(event, 'dashboard')">Dashboard</sl-menu-item>
+                    <sl-menu-item onclick="showPage(event, 'calendar')">Calendar</sl-menu-item>
+                    <sl-divider></sl-divider>
+                    <sl-menu-item onclick="showPage(event, 'server-tips')">Server Tips</sl-menu-item>
+                    <sl-menu-item onclick="showPage(event, 'bartender-tips')">Bartender Tips</sl-menu-item>
+                    <sl-menu-item onclick="showPage(event, 'payouts')">Payouts</sl-menu-item>
+                    <sl-divider></sl-divider>
+                    <sl-menu-item onclick="showPage(event, 'fetch')">Fetch</sl-menu-item>
+                    <sl-menu-item onclick="showPage(event, 'reports')">Reports</sl-menu-item>
+                    <sl-menu-item onclick="showPage(event, 'query')">Query Builder</sl-menu-item>
+                </sl-menu>
+            </sl-dropdown>
+            <div class="connection-status" id="connectionStatus">
+                <sl-icon name="wifi"></sl-icon>
+                <span>Connecting...</span>
+            </div>
+            <sl-button variant="neutral" size="small" onclick="refreshData()">
+                <sl-icon slot="prefix" name="arrow-clockwise"></sl-icon>
+                Refresh
+            </sl-button>
+        </div>
+    </header>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-content">
+            <sl-spinner></sl-spinner>
+            <p>Loading data...</p>
+        </div>
+    </div>
+    
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="nav-section">
+                <div class="nav-section-title">Dashboard</div>
+                <a class="nav-item active" href="#dashboard" onclick="showPage(event, 'dashboard')">
+                    <sl-icon name="speedometer2"></sl-icon>
+                    Overview
+                </a>
+                <a class="nav-item" href="#reports" onclick="showPage(event, 'reports')">
+                    <sl-icon name="file-earmark-text"></sl-icon>
+                    Reports
+                </a>
+                <a class="nav-item" href="#worker-report" onclick="showPage(event, 'worker-report')">
+                    <sl-icon name="table"></sl-icon>
+                    Worker Report
+                </a>
+                <a class="nav-item" href="#query" onclick="showPage(event, 'query')">
+                    <sl-icon name="code-square"></sl-icon>
+                    Query Builder
+                </a>
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-section-title">Schedule</div>
+                <a class="nav-item" href="#calendar" onclick="showPage(event, 'calendar')">
+                    <sl-icon name="calendar-week"></sl-icon>
+                    Calendar
+                </a>
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-section-title">Tips Management</div>
+                <a class="nav-item" href="#server-tips" onclick="showPage(event, 'server-tips')">
+                    <sl-icon name="cash-coin"></sl-icon>
+                    Server Tips
+                </a>
+                <a class="nav-item" href="#bartender-tips" onclick="showPage(event, 'bartender-tips')">
+                    <sl-icon name="cup-straw"></sl-icon>
+                    Bartender Tips
+                </a>
+                <a class="nav-item" href="#payouts" onclick="showPage(event, 'payouts')">
+                    <sl-icon name="wallet"></sl-icon>
+                    Payouts
+                </a>
+                <a class="nav-item" href="#suggest" onclick="showPage(event, 'suggest')">
+                    <sl-icon name="lightbulb"></sl-icon>
+                    Suggest
+                </a>
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-section-title">Data</div>
+                <a class="nav-item" href="#fetch" onclick="showPage(event, 'fetch')">
+                    <sl-icon name="cloud-download"></sl-icon>
+                    Fetch
+                </a>
+                <a class="nav-item" onclick="runReport('orders_overview')">
+                    <sl-icon name="receipt"></sl-icon>
+                    Orders
+                </a>
+                <a class="nav-item" onclick="runReport('employees')">
+                    <sl-icon name="people"></sl-icon>
+                    Employees
+                </a>
+                <a class="nav-item" onclick="runReport('time_entries')">
+                    <sl-icon name="clock"></sl-icon>
+                    Time Entries
+                </a>
+            </div>
+        </nav>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <div class="page active" id="dashboard-page">
+                <a id="dashboard"></a>
+                <div class="page-header">
+                    <h2>Dashboard</h2>
+                    <p>Real-time insights from your Toast data</p>
+                </div>
+                
+                <div class="card-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Total Orders</div>
+                        <div class="metric-value" id="metric-orders">-</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Employees</div>
+                        <div class="metric-value" id="metric-employees">-</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Time Entries</div>
+                        <div class="metric-value" id="metric-sales">-</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Cash Entries</div>
+                        <div class="metric-value" id="metric-check">-</div>
+                    </div>
+                </div>
+                
+                <div class="table-container" style="padding: 20px;">
+                    <h3>Orders by Status</h3>
+                    <div class="chart-container">
+                        <canvas id="hourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Calendar Page -->
+            <div class="page" id="calendar-page">
+                <a id="calendar"></a>
+                <div class="page-header">
+                    <h2>Schedule Calendar</h2>
+                    <p>Click a date to see who worked that day</p>
+                </div>
+                
+                <div class="form-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <sl-button-group>
+                            <sl-button onclick="changeCalendarMonth(-1)">
+                                <sl-icon name="chevron-left"></sl-icon>
+                            </sl-button>
+                            <sl-button variant="default" disabled id="currentMonthLabel">
+                                Loading...
+                            </sl-button>
+                            <sl-button onclick="changeCalendarMonth(1)">
+                                <sl-icon name="chevron-right"></sl-icon>
+                            </sl-button>
+                        </sl-button-group>
+                        <sl-button variant="primary" onclick="goToToday()">Today</sl-button>
+                    </div>
+                    
+                    <a id="calendar-grid"></a>
+                    <div id="calendarGrid" class="calendar-grid">
+                        <!-- Calendar will be rendered here -->
+                    </div>
+                </div>
+                
+                <div class="form-card" id="dateWorkersSection" style="display: none;">
+                    <a id="calendar-workers"></a>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h3 id="selectedDateTitle" style="margin: 0;">Workers</h3>
+                        <sl-button variant="primary" size="small" onclick="quickAssignTipsFromCalendar()">
+                            <sl-icon slot="prefix" name="cash-coin"></sl-icon>
+                            Assign Tips for Selected
+                        </sl-button>
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <sl-input id="calendarWorkerFilter" placeholder="Filter workers..." style="max-width: 300px;" oninput="filterCalendarWorkers()">
+                            <sl-icon slot="prefix" name="search"></sl-icon>
+                        </sl-input>
+                    </div>
+                    
+                    <div id="calendarWorkersList" class="workers-grid">
+                        <!-- Workers will be rendered here -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Reports Page -->
+            <div class="page" id="reports-page">
+                <a id="reports"></a>
+                <div class="page-header">
+                    <h2>Reports</h2>
+                    <p>Generate and view detailed reports</p>
+                </div>
+                
+                <div class="card-grid">
+                    <div class="report-card" onclick="runReport('orders_overview')">
+                        <div class="report-icon"><sl-icon name="receipt"></sl-icon></div>
+                        <h3>Orders Overview</h3>
+                        <p>View all orders with details including order number, date, and status.</p>
+                    </div>
+                    <div class="report-card" onclick="runReport('employees')">
+                        <div class="report-icon"><sl-icon name="people"></sl-icon></div>
+                        <h3>Employees</h3>
+                        <p>Employee directory with contact information and details.</p>
+                    </div>
+                    <div class="report-card" onclick="runReport('time_entries')">
+                        <div class="report-icon"><sl-icon name="clock"></sl-icon></div>
+                        <h3>Time Entries</h3>
+                        <p>Employee time clock entries with hours worked.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Query Builder Page -->
+            <div class="page" id="query-page">
+                <a id="query"></a>
+                <div class="page-header">
+                    <h2>Query Builder</h2>
+                    <p>Build custom DSL queries to analyze your data</p>
+                </div>
+                
+                <!-- Quick Jump Links -->
+                <div class="stat-card" style="margin-bottom: 24px;">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                        <sl-icon name="lightning-charge" style="color: var(--primary-color);"></sl-icon>
+                        <span style="font-weight: 600;">Quick Jump:</span>
+                        <a href="#dashboard" class="nav-link">Dashboard</a>
+                        <a href="#calendar" class="nav-link">Calendar</a>
+                        <a href="#server-tips" class="nav-link">Server Tips</a>
+                        <a href="#bartender-tips" class="nav-link">Bartender Tips</a>
+                        <a href="#payouts" class="nav-link">Payouts</a>
+                    </div>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-input type="date" label="Start Date" id="queryStartDate" class="form-field"></sl-input>
+                        <sl-input type="date" label="End Date" id="queryEndDate" class="form-field"></sl-input>
+                        <sl-select label="Quick Date" id="quickDateSelect" class="form-field" style="max-width: 180px;" onsl-change="fillQuickDate()">
+                            <sl-option value="">Select...</sl-option>
+                            <sl-option value="2026-01-31">Jan 31, 2026</sl-option>
+                            <sl-option value="2026-01-30">Jan 30, 2026</sl-option>
+                            <sl-option value="2026-01-25">Jan 25, 2026</sl-option>
+                            <sl-option value="2026-01-20">Jan 20, 2026</sl-option>
+                            <sl-option value="2026-01-15">Jan 15, 2026</sl-option>
+                            <sl-option value="2026-01-10">Jan 10, 2026</sl-option>
+                            <sl-option value="2026-01-05">Jan 05, 2026</sl-option>
+                            <sl-option value="2026-01-01">Jan 01, 2026</sl-option>
+                            <sl-option value="2025-12-31">Dec 31, 2025</sl-option>
+                            <sl-option value="2025-12-25">Dec 25, 2025</sl-option>
+                            <sl-option value="2025-12-20">Dec 20, 2025</sl-option>
+                            <sl-option value="2025-12-15">Dec 15, 2025</sl-option>
+                        </sl-select>
+                    </div>
+                    
+                    <sl-textarea
+                        id="dslQueryText"
+                        label="DSL Query"
+                        placeholder="Enter your DSL query JSON here..."
+                        rows="15"
+                        style="font-family: monospace; font-size: 13px;"
+                    ></sl-textarea>
+                    
+                    <div style="margin-top: 16px; display: flex; gap: 12px;">
+                        <sl-button variant="primary" size="large" onclick="executeCustomQuery()">
+                            <sl-icon slot="prefix" name="play"></sl-icon>
+                            Run Query
+                        </sl-button>
+                        <sl-button variant="neutral" onclick="loadExampleQuery()">
+                            <sl-icon slot="prefix" name="code"></sl-icon>
+                            Load Example
+                        </sl-button>
+                        <sl-button variant="neutral" onclick="exportQueryResults()">
+                            <sl-icon slot="prefix" name="download"></sl-icon>
+                            Export CSV
+                        </sl-button>
+                    </div>
+                </div>
+                
+                <div class="table-container" id="queryResults" style="margin-top: 24px; display: none;">
+                    <div class="table-header">
+                        <h3>Query Results</h3>
+                        <span id="resultCount"></span>
+                    </div>
+                    <div id="queryResultsTable"></div>
+                </div>
+            </div>
+            
+            <!-- Server Tips Page -->
+            <div class="page" id="server-tips-page">
+                <a id="server-tips"></a>
+                <div class="page-header">
+                    <h2>Server Tips</h2>
+                    <p>Assign server tips to payout pools by location</p>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-select label="Worker" id="serverTipsWorker" class="form-field" placeholder="Select worker">
+                            <sl-option value="">Loading workers...</sl-option>
+                        </sl-select>
+                        <sl-input type="date" label="Date" id="serverTipsDate" class="form-field"></sl-input>
+                        <sl-select label="Location (Bucket)" id="serverTipsBucket" class="form-field" placeholder="Select location">
+                            <sl-option value="">All Locations</sl-option>
+                        </sl-select>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <sl-button variant="primary" onclick="fetchServerTipsFromToast()">
+                            <sl-icon slot="prefix" name="cloud-download"></sl-icon>
+                            Fetch from Toast
+                        </sl-button>
+                    </div>
+                </div>
+                
+                <!-- Suggested Buckets from Shifts -->
+                <div class="form-card" id="suggestedBucketsCard" style="display: block;">
+                    <a id="locations-detected"></a>
+                    <h3>Detected Locations from Shifts</h3>
+                    <div id="suggestedBuckets">
+                        <p style="color: #666; font-style: italic;">Click "Fetch from Toast" to see where this worker was scheduled.</p>
+                    </div>
+                    <div class="status-legend">
+                        <span>Bucket Status:</span>
+                        <span class="status-pill unpushed">
+                            <sl-icon name="circle" style="font-size: 10px;"></sl-icon> Unpushed
+                        </span>
+                        <span class="status-pill pushed">
+                            <sl-icon name="circle-fill" style="font-size: 10px;"></sl-icon> Pushed (unpaid)
+                        </span>
+                        <span class="status-pill committed">
+                            <sl-icon name="check-circle-fill" style="font-size: 10px;"></sl-icon> Committed
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="form-card" id="serverTipsForm" style="display: none;">
+                    <a id="server-tips-form"></a>
+                    
+                    <!-- Main Figures -->
+                    <h3 style="display: flex; align-items: center; gap: 8px;">
+                        <span>Main Figures</span>
+                        <span id="serverMainFiguresSplitBadge" style="display: none;">
+                            <sl-badge variant="warning" pill>
+                                <sl-icon slot="prefix" name="people"></sl-icon>
+                                Split checks applied
+                            </sl-badge>
+                        </span>
+                    </h3>
+                    <div class="form-row">
+                        <sl-input type="number" step="0.01" label="Cash Tips" id="serverCashTips" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Non-Cash Tips" id="serverCreditTips" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Gratuity" id="serverGratuity" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Net Sales" id="serverNetSales" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                    </div>
+                    
+                    <!-- Add Tips for Payout -->
+                    <h3 style="margin-top: 24px;">Add Tips for Payout</h3>
+                    <div class="form-row">
+                        <sl-input type="number" step="0.01" label="Bartips" id="serverBarTips" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Bussertips" id="serverBusserTips" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Expotips" id="serverExpoTips" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Runnertips" id="serverRunnerTips" value="0" class="form-field" oninput="updateServerTipsCalculations()"></sl-input>
+                    </div>
+                    
+                    <!-- Pushed/Committed Status -->
+                    <div id="serverTipsPushedInfo" style="margin: 16px 0; padding: 12px; background: #fff3e0; border-radius: 8px; display: none;">
+                        <strong>Already pushed for this worker/date/bucket:</strong>
+                        <div id="serverTipsPushedDetails"></div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div style="margin-top: 16px; display: flex; gap: 12px;">
+                        <sl-button variant="primary" onclick="saveServerTips()">Save</sl-button>
+                        <sl-button variant="success" onclick="pushServerTipsToPayouts()">Push to Payouts</sl-button>
+                        <sl-button variant="danger" onclick="undoServerTipsPayouts()">Undo Payouts</sl-button>
+                    </div>
+                    
+                    <!-- Intermediate Totals -->
+                    <div id="serverTipsIntermediateTotals" style="margin: 16px 0; padding: 16px; background: #e3f2fd; border-radius: 8px; display: none;">
+                        <h4 style="margin-top: 0;">Intermediate Totals</h4>
+                        <div class="stats-row" style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px;">
+                            <div>Gratuity total: <strong id="intermediateGratuity">0.00</strong></div>
+                            <div>Non-cash tips: <strong id="intermediateNonCash">0.00</strong></div>
+                            <div>Cash collected (sales): <strong id="intermediateCashCollected">0.00</strong></div>
+                            <div>Formula: <code>(gratuity + non-cash) - cash sales</code> = <strong id="intermediateFormula">0.00</strong></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Totals Summary Table -->
+                    <div id="serverTipsTotalsTable" style="margin: 16px 0; overflow-x: auto;">
+                        <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                            <thead>
+                                <tr style="background: #f5f5f5;">
+                                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Worker</th>
+                                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Bucket</th>
+                                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Total Payout Tips</th>
+                                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Owed to Server</th>
+                                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Owed to Restaurant</th>
+                                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">After Payout Tips</th>
+                                    <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Tip %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td id="summaryWorker" style="padding: 8px; border-bottom: 1px solid #eee;">-</td>
+                                    <td id="summaryBucket" style="padding: 8px; border-bottom: 1px solid #eee;">-</td>
+                                    <td id="summaryTotalPayout" style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">0.00</td>
+                                    <td id="summaryOwedServer" style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">0.00</td>
+                                    <td id="summaryOwedRestaurant" style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">0.00</td>
+                                    <td id="summaryAfterPayout" style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">0.00</td>
+                                    <td id="summaryGrossTipPct" style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">0.00%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Category Breakdown Table -->
+                    <div id="serverTipsCategoryBreakdown" style="margin: 16px 0; display: none;">
+                        <h4>Per-Category Sales and Tip Calculations</h4>
+                        <div style="overflow-x: auto;">
+                            <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                                <thead>
+                                    <tr style="background: #f5f5f5;">
+                                        <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Category</th>
+                                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Sales</th>
+                                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Bartips (2%, excl Bottled Wine)</th>
+                                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Servertips (2%)</th>
+                                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Expotips (1% Food)</th>
+                                        <th style="padding: 8px; text-align: right; border-bottom: 2px solid #ddd;">Runnertips (0.5% Food)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="categoryBreakdownBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                                <tfoot style="background: #f9f9f9; font-weight: bold;">
+                                    <tr>
+                                        <td style="padding: 8px; border-top: 2px solid #ddd;">Net Sales</td>
+                                        <td id="categoryTotalSales" style="padding: 8px; text-align: right; border-top: 2px solid #ddd;">0.00</td>
+                                        <td id="categoryTotalBartips" style="padding: 8px; text-align: right; border-top: 2px solid #ddd;">0.00</td>
+                                        <td id="categoryTotalServertips" style="padding: 8px; text-align: right; border-top: 2px solid #ddd;">0.00</td>
+                                        <td id="categoryTotalExpotips" style="padding: 8px; text-align: right; border-top: 2px solid #ddd;">0.00</td>
+                                        <td id="categoryTotalRunnertips" style="padding: 8px; text-align: right; border-top: 2px solid #ddd;">0.00</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px;">Tax</td>
+                                        <td id="categoryTaxTotal" style="padding: 8px; text-align: right;">0.00</td>
+                                        <td colspan="4"></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px;">Gross Sales</td>
+                                        <td id="categoryGrossSalesTotal" style="padding: 8px; text-align: right;">0.00</td>
+                                        <td colspan="4"></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px;">Total Gratuity and Fees</td>
+                                        <td id="categoryGratuityFeesTotal" style="padding: 8px; text-align: right;">0.00</td>
+                                        <td colspan="4"></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px;">Non-Cash Tips</td>
+                                        <td id="categoryNonCashTipsTotal" style="padding: 8px; text-align: right;">0.00</td>
+                                        <td colspan="4"></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px; border-top: 1px solid #ddd;">Total Amount</td>
+                                        <td id="categoryTotalAmount" style="padding: 8px; text-align: right; border-top: 1px solid #ddd;">0.00</td>
+                                        <td colspan="4"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Server Orders Table with Check Assignments -->
+                    <div id="serverOrdersSection" style="margin-top: 32px; display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h3 style="margin: 0;">Orders & Checks</h3>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <sl-badge id="serverOrdersCount" variant="primary">0 orders</sl-badge>
+                                <sl-button size="small" variant="neutral" onclick="clearAllCheckAssignments()">
+                                    <sl-icon slot="prefix" name="x-circle"></sl-icon>
+                                    Clear All Splits
+                                </sl-button>
+                            </div>
+                        </div>
+                        
+                        <!-- Check Split Summary -->
+                        <div id="checkSplitSummary" style="margin-bottom: 16px; padding: 12px; background: #e8f5e9; border-radius: 8px; display: none;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 14px;">Split Summary</h4>
+                            <div id="checkSplitSummaryContent" style="font-size: 13px;"></div>
+                        </div>
+                        
+                        <div id="serverOrdersContent" style="overflow-x: auto;">
+                            <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: #f5f5f5;">
+                                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Order #</th>
+                                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Check #</th>
+                                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">Time</th>
+                                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Subtotal</th>
+                                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Tax</th>
+                                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Non-Cash Tips</th>
+                                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Gratuity and Fees</th>
+                                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #ddd;">Total</th>
+                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Items</th>
+                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Split With</th>
+                                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #ddd;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="serverOrdersBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                                <tfoot style="background: #f9f9f9; font-weight: bold;">
+                                    <tr>
+                                        <td colspan="3" style="padding: 10px; border-top: 2px solid #ddd; text-align: right;">Totals:</td>
+                                        <td id="serverOrdersSubtotal" style="padding: 10px; text-align: right; border-top: 2px solid #ddd;">$0.00</td>
+                                        <td id="serverOrdersTax" style="padding: 10px; text-align: right; border-top: 2px solid #ddd;">$0.00</td>
+                                        <td id="serverOrdersNonCashTips" style="padding: 10px; text-align: right; border-top: 2px solid #ddd;">$0.00</td>
+                                        <td id="serverOrdersGratuityFees" style="padding: 10px; text-align: right; border-top: 2px solid #ddd;">$0.00</td>
+                                        <td id="serverOrdersTotal" style="padding: 10px; text-align: right; border-top: 2px solid #ddd;">$0.00</td>
+                                        <td id="serverOrdersItemCount" style="padding: 10px; text-align: center; border-top: 2px solid #ddd;">0</td>
+                                        <td colspan="2" style="padding: 10px; border-top: 2px solid #ddd; text-align: center; color: #666; font-weight: normal;">
+                                            <span id="splitCheckCount">0</span> splits
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Check Assignment Dialog -->
+                    <sl-dialog id="checkAssignmentDialog" label="Assign Check to Workers" style="--width: 500px;">
+                        <div style="margin-bottom: 16px;">
+                            <div style="margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 8px;">
+                                <strong>Check Details:</strong><br>
+                                Order #<span id="assignDialogOrderNum">-</span> / Check #<span id="assignDialogCheckNum">-</span><br>
+                                Total: <strong>$<span id="assignDialogTotal">0.00</span></strong>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Split Type:</label>
+                            <sl-select id="checkSplitType" value="equal" style="width: 100%;">
+                                <sl-option value="equal">Equal Split</sl-option>
+                                <sl-option value="percentage">Percentage Split</sl-option>
+                            </sl-select>
+                        </div>
+                        
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Assign Workers:</label>
+                            <div id="checkWorkerAssignments" style="display: flex; flex-direction: column; gap: 8px;">
+                                <!-- Worker checkboxes populated by JS -->
+                            </div>
+                        </div>
+                        
+                        <div slot="footer">
+                            <sl-button variant="neutral" onclick="document.getElementById('checkAssignmentDialog').hide()">Cancel</sl-button>
+                            <sl-button variant="primary" onclick="saveCheckAssignment()">Save Assignment</sl-button>
+                        </div>
+                    </sl-dialog>
+                </div>
+            </div>
+            
+            <!-- Bartender Tips Page -->
+            <div class="page" id="bartender-tips-page">
+                <a id="bartender-tips"></a>
+                <div class="page-header">
+                    <h2>Bartender Tips</h2>
+                    <p>Assign bartender tips by bar location</p>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-input type="date" label="Date" id="bartenderTipsDate" class="form-field"></sl-input>
+                        <sl-select label="Bar Location (Bucket)" id="bartenderTipsBucket" class="form-field" placeholder="Select bar">
+                            <sl-option value="">Select bar...</sl-option>
+                            <sl-option value="am_bar">AM Bar</sl-option>
+                            <sl-option value="sunset">Sunset Bar</sl-option>
+                            <sl-option value="westwing">West Wing</sl-option>
+                            <sl-option value="eastwing">East Wing</sl-option>
+                        </sl-select>
+                        <div style="display: flex; align-items: flex-end; gap: 8px;">
+                            <sl-button variant="primary" onclick="loadBartenderDefaults()">
+                                <sl-icon slot="prefix" name="cloud-download"></sl-icon>
+                                Fetch Data
+                            </sl-button>
+                            <sl-button variant="primary" onclick="saveBartenderTips()">
+                                <sl-icon slot="prefix" name="save"></sl-icon>
+                                Save
+                            </sl-button>
+                        </div>
+                    </div>
+                    
+                    <!-- Bartender Selection -->
+                    <div style="margin-top: 16px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="font-weight: 600;">Bartenders:</span>
+                                <sl-badge id="bartenderCount" variant="primary">0 selected</sl-badge>
+                                <sl-button size="small" id="btnUnselectAllBartenders" onclick="unselectAllBartenders()">Unselect All</sl-button>
+                            </div>
+                            <sl-checkbox id="showAllBartenders" onsl-change="toggleShowAllBartenders()">Show all</sl-checkbox>
+                        </div>
+                        <div id="bartendersList" style="border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: 12px; max-height: 200px; overflow-y: auto;">
+                            <p style="color: var(--sl-color-neutral-500); font-style: italic; margin: 0;">Select date and bar to load bartenders</p>
+                        </div>
+                        <small style="color: var(--sl-color-neutral-500);">Select one or more bartenders; amounts will be split equally.</small>
+                    </div>
+                </div>
+                
+                <!-- Main Figures -->
+                <div class="form-card" id="bartenderMainFigures" style="display: none;">
+                    <h3>Main Figures</h3>
+                    <div class="form-row">
+                        <sl-input type="number" step="0.01" label="Cash Tips" id="btCashTips" value="0" class="form-field" onsl-input="updateBartenderPreview()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Non-Cash Tips" id="btCreditTips" value="0" class="form-field" onsl-input="updateBartenderPreview()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Net Sales" id="btNetSales" value="0" class="form-field" onsl-input="onNetSalesChange()"></sl-input>
+                    </div>
+                </div>
+                
+                <!-- Add Tips for Payout -->
+                <div class="form-card" id="bartenderPayoutTips" style="display: none;">
+                    <h3>Add Tips for Payout</h3>
+                    <div class="form-row">
+                        <sl-input type="number" step="0.01" label="Busser Tips" id="btBusserTips" value="0" class="form-field" onsl-input="updateBartenderPreview()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Expo Tips" id="btExpoTips" value="0" class="form-field" onsl-input="updateBartenderPreview()"></sl-input>
+                        <sl-input type="number" step="0.01" label="Runner Tips" id="btRunnerTips" value="0" class="form-field" onsl-input="updateBartenderPreview()"></sl-input>
+                    </div>
+                    <small style="color: var(--sl-color-neutral-500);">These amounts will be split equally among the selected bartenders.</small>
+                </div>
+                
+                <!-- Per-Bartender Split Preview -->
+                <div class="form-card" id="bartenderPreviewCard" style="display: none;">
+                    <h3>Per-Bartender Split Preview</h3>
+                    <div class="table-wrap">
+                        <table id="bartenderPreviewTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Bartender</th>
+                                    <th>Cash Tips</th>
+                                    <th>Non-Cash Tips</th>
+                                    <th>Net Sales</th>
+                                    <th>Busser Tips</th>
+                                    <th>Expo Tips</th>
+                                    <th>Runner Tips</th>
+                                    <th>Pushed (unpaid)</th>
+                                    <th>Committed</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <small id="bartenderPreviewNote" style="color: var(--sl-color-neutral-500);"></small>
+                </div>
+                
+                <!-- Per-Category Sales and Tip Calculations -->
+                <div class="form-card" id="bartenderCategoryCard" style="display: none;">
+                    <h3>Per-Category Sales and Tip Calculations</h3>
+                    <div class="table-wrap">
+                        <table id="bartenderCategoryTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Sales</th>
+                                    <th>Busser Tips (2%)</th>
+                                    <th>Expo Tips (1% Food)</th>
+                                    <th>Runner Tips (0.5% Food)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Payouts Page -->
+            <div class="page" id="payouts-page">
+                <a id="payouts"></a>
+                <div class="page-header">
+                    <h2>Payouts</h2>
+                    <p>Manage tip payouts to employees by location</p>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-select label="Bucket (Location)" id="payoutBucket" class="form-field" placeholder="Select location">
+                            <sl-option value="">Select Bucket</sl-option>
+                        </sl-select>
+                        <sl-input type="date" label="Business Date" id="payoutDate" class="form-field"></sl-input>
+                        <sl-switch id="payoutShowAll">Show all workers</sl-switch>
+                    </div>
+                    
+                    <sl-button variant="primary" onclick="loadPayoutsData()">
+                        <sl-icon slot="prefix" name="search"></sl-icon>
+                        Load Data
+                    </sl-button>
+                </div>
+                
+                <div id="payoutsContent" style="display: none;">
+                    <a id="payouts-totals"></a>
+                    <div class="form-card">
+                        <h3>Unpaid Totals</h3>
+                        <div class="form-row">
+                            <sl-input type="number" step="0.01" label="Bartender Amount" id="payoutBartenderAmount" value="0" class="form-field"></sl-input>
+                            <sl-input type="number" step="0.01" label="Busser Amount" id="payoutBusserAmount" value="0" class="form-field"></sl-input>
+                            <sl-input type="number" step="0.01" label="Expo Amount" id="payoutExpoAmount" value="0" class="form-field"></sl-input>
+                            <sl-input type="number" step="0.01" label="Runner Amount" id="payoutRunnerAmount" value="0" class="form-field"></sl-input>
+                        </div>
+                    </div>
+                    
+                    <div class="form-card">
+                        <a id="payouts-assignments"></a>
+                        <h3>Worker Assignments</h3>
+                        <div class="assignment-grid" id="payoutAssignments">
+                            <!-- Populated by JS -->
+                        </div>
+                        
+                        <div style="margin-top: 16px; display: flex; gap: 12px;">
+                            <sl-button variant="primary" onclick="savePayoutAssignments()">Save Assignments</sl-button>
+                            <sl-button variant="neutral" onclick="previewPayoutDistribution()">Preview Distribution</sl-button>
+                            <sl-button variant="success" onclick="commitPayouts()">Commit Payouts</sl-button>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container" id="payoutPreviewSection" style="display: none; margin-top: 20px;">
+                        <a id="payouts-preview"></a>
+                        <div class="table-header">
+                            <h3>Distribution Preview</h3>
+                        </div>
+                        <div class="preview-meta" id="payoutPreviewMeta"></div>
+                        <div id="payoutPreviewTable"></div>
+                    </div>
+                    
+                    <div class="table-container" style="margin-top: 20px;">
+                        <a id="payouts-unpaid-breakdown"></a>
+                        <div class="table-header">
+                            <h3>Unpaid Pushed Breakdown by Server</h3>
+                        </div>
+                        <div id="unpaidBreakdownTable">
+                            <p style="color: #666; font-style: italic;">Click "Load Data" to see unpaid pushed breakdown.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container" style="margin-top: 20px;">
+                        <div class="table-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3>Committed Payouts</h3>
+                            <sl-button variant="danger" size="small" onclick="rollbackCommittedPayouts()">
+                                Rollback Latest Session
+                            </sl-button>
+                        </div>
+                        <div id="committedPayoutsTable"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Suggest Page -->
+            <div class="page" id="suggest-page">
+                <a id="suggest"></a>
+                <div class="page-header">
+                    <h2>Suggestions</h2>
+                    <p>Find workers who have tips but haven't pushed or committed payouts</p>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-input type="date" label="Date" id="suggestDate" class="form-field"></sl-input>
+                        <div style="display: flex; align-items: flex-end; gap: 8px;">
+                            <sl-button variant="primary" onclick="loadSuggestions()">
+                                <sl-icon slot="prefix" name="search"></sl-icon>
+                                Find Workers
+                            </sl-button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="table-container" id="suggestContainer" style="display: none;">
+                    <div class="table-header">
+                        <h3 id="suggestTitle">Suggestions</h3>
+                        <sl-badge id="suggestCount" variant="warning">0 found</sl-badge>
+                    </div>
+                    <div id="suggestTable" style="overflow-x: auto;"></div>
+                    <p style="color: #666; font-size: 13px; padding: 12px; background: #fff3e0; border-radius: 8px; margin-top: 12px;">
+                        <sl-icon name="info-circle" style="vertical-align: middle; margin-right: 6px;"></sl-icon>
+                        These employees reported cash/credit tips but have not pushed or committed any tips.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Fetch Page -->
+            <div class="page" id="fetch-page">
+                <a id="fetch"></a>
+                <div class="page-header">
+                    <h2>Fetch Toast Data</h2>
+                    <p>Fetch data from Toast API for a date range</p>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-input type="date" label="Start Date" id="fetchStartDate" class="form-field"></sl-input>
+                        <sl-input type="date" label="End Date" id="fetchEndDate" class="form-field"></sl-input>
+                    </div>
+                    <div class="form-row" style="margin-top: 16px;">
+                        <sl-select label="Endpoints to Fetch" id="fetchEndpoints" multiple clearable style="flex: 1;">
+                            <sl-option value="time_entries">Time Entries (labor/v1/timeEntries)</sl-option>
+                            <sl-option value="employees">Employees (labor/v1/employees)</sl-option>
+                            <sl-option value="jobs">Jobs (labor/v1/jobs)</sl-option>
+                            <sl-option value="shifts">Shifts (labor/v1/shifts)</sl-option>
+                            <sl-option value="orders">Orders (orders/v2/orders)</sl-option>
+                            <sl-option value="cash_entries">Cash Entries (cashmgmt/v1/entries)</sl-option>
+                            <sl-option value="deposits">Deposits (cashmgmt/v1/deposits)</sl-option>
+                            <sl-option value="sales_categories">Sales Categories (configuration/v1/salesCategories)</sl-option>
+                            <sl-option value="revenue_centers">Revenue Centers (config/v2/revenueCenters)</sl-option>
+                            <sl-option value="all">All Endpoints</sl-option>
+                        </sl-select>
+                    </div>
+                    <div class="form-row" style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+                        <sl-button variant="primary" onclick="fetchToastData()">
+                            <sl-icon slot="prefix" name="cloud-download"></sl-icon>
+                            Fetch Data
+                        </sl-button>
+                        <sl-button variant="neutral" onclick="selectAllFetchEndpoints()">
+                            <sl-icon slot="prefix" name="check-all"></sl-icon>
+                            Select All
+                        </sl-button>
+                        <sl-button variant="neutral" onclick="clearFetchEndpoints()">
+                            <sl-icon slot="prefix" name="x-lg"></sl-icon>
+                            Clear
+                        </sl-button>
+                    </div>
+                    <div style="margin-top: 12px; color: #555; font-size: 0.92rem;">
+                        <strong>Auto-fetch interval:</strong>
+                        <span id="autoFetchIntervalValue">Loading...</span>
+                    </div>
+                    <div style="margin-top: 8px; color: #555; font-size: 0.92rem;">
+                        <strong>Labor watch interval:</strong>
+                        <span id="laborWatchIntervalValue">Loading...</span>
+                    </div>
+                    <div style="margin-top: 8px; color: #555; font-size: 0.92rem;">
+                        <strong>Last labor change detected:</strong>
+                        <span id="laborWatchLastChangeValue">Loading...</span>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; gap: 8px; align-items: end; flex-wrap: wrap;">
+                        <sl-input id="laborWatchIntervalInput" type="number" min="1" max="60" step="1" label="Labor watch interval (minutes)" value="1" style="max-width: 280px;"></sl-input>
+                        <sl-button variant="primary" onclick="saveLaborWatchInterval()">
+                            <sl-icon slot="prefix" name="clock-history"></sl-icon>
+                            Save Labor Interval
+                        </sl-button>
+                    </div>
+                </div>
+                
+                <div id="fetchResults" style="display: none; margin-top: 24px;">
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Fetch Results</h3>
+                            <sl-badge id="fetchStatusBadge" variant="neutral">Pending</sl-badge>
+                        </div>
+                        <div id="fetchResultsContent" style="overflow-x: auto;">
+                            <table class="data-table" style="width: 100%; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: #f8f9fa;">
+                                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Endpoint</th>
+                                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Status</th>
+                                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Records</th>
+                                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Duration</th>
+                                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fetchResultsBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div id="fetchProgress" style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px; display: none;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <sl-spinner style="font-size: 24px;"></sl-spinner>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; margin-bottom: 4px;" id="fetchProgressText">Fetching data...</div>
+                                <sl-progress-bar id="fetchProgressBar" value="0" style="--indicator-color: #667eea;"></sl-progress-bar>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sync to JAQ Section -->
+                <div style="margin-top: 32px; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                        <div>
+                            <h3 style="margin: 0 0 8px 0; font-size: 1.2rem;">
+                                <sl-icon name="database" style="margin-right: 8px;"></sl-icon>
+                                Sync to JAQ Data Lake
+                            </h3>
+                            <p style="margin: 0; opacity: 0.9; font-size: 0.9rem;">
+                                Copy fetched data to JAQ database and reload the query server.
+                                This makes the data available in the Calendar and Reports.
+                            </p>
+                        </div>
+                        <sl-button variant="default" size="large" onclick="syncToJaq()" style="--sl-color-primary-600: white; --sl-color-primary-700: #f0f0f0;">
+                            <sl-icon slot="prefix" name="arrow-repeat"></sl-icon>
+                            Sync to JAQ
+                        </sl-button>
+                    </div>
+                    <div id="syncJaqStatus" style="margin-top: 16px; display: none;"></div>
+                </div>
+            </div>
+            
+            <!-- Worker Report Page -->
+            <div class="page" id="worker-report-page">
+                <a id="worker-report"></a>
+                <div class="page-header">
+                    <h2>Worker Report</h2>
+                    <p>View worker tips, payouts, and received amounts by date range</p>
+                </div>
+                
+                <div class="form-card">
+                    <div class="form-row">
+                        <sl-input type="date" label="Start Date" id="workerReportStartDate" class="form-field"></sl-input>
+                        <sl-input type="date" label="End Date" id="workerReportEndDate" class="form-field"></sl-input>
+                        <div style="display: flex; align-items: flex-end; gap: 8px;">
+                            <sl-button variant="primary" onclick="loadWorkerReport()">
+                                <sl-icon slot="prefix" name="search"></sl-icon>
+                                Load Report
+                            </sl-button>
+                            <sl-button variant="neutral" onclick="exportWorkerReport()">
+                                <sl-icon slot="prefix" name="download"></sl-icon>
+                                Export CSV
+                            </sl-button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="table-container" id="workerReportContainer" style="display: none;">
+                    <div class="table-header">
+                        <h3>Worker Report</h3>
+                        <span id="workerReportRowCount"></span>
+                    </div>
+                    <div id="workerReportTable" style="overflow-x: auto;"></div>
+                </div>
+            </div>
+            
+            <!-- Report Results Page -->
+            <div class="page" id="report-results-page">
+                <a id="report-results"></a>
+                <div class="page-header">
+                    <h2 id="reportTitle">Report</h2>
+                    <p id="reportDescription">Report description</p>
+                </div>
+                
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3>Results</h3>
+                        <div>
+                            <sl-button size="small" onclick="exportCurrentReport()">
+                                <sl-icon slot="prefix" name="download"></sl-icon>
+                                Export CSV
+                            </sl-button>
+                            <sl-button size="small" variant="neutral" onclick="showPage(event, 'reports')">
+                                <sl-icon slot="prefix" name="arrow-left"></sl-icon>
+                                Back
+                            </sl-button>
+                        </div>
+                    </div>
+                    <div id="reportResultsTable"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Toast Notifications -->
+    <sl-alert id="toast" duration="3000" closable style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
+        <sl-icon slot="icon" name="info-circle"></sl-icon>
+        <span id="toastMessage">Notification</span>
+    </sl-alert>
+    
+    <script src="app.js"></script>
+</body>
+</html>

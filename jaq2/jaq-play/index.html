@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="./jaq.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./src/style.css">
+  <title>jaq playground</title>
+</head>
+
+<body>
+  <header class="top">
+    <img class="logo" src="./jaq.svg" alt="jaq logo"/>
+    <button id="run-stop" title="Run/Stop filter">
+      <div id="run">▶️ Run</div>
+      <div id="stop">⏹️ Stop</div>
+    </button>
+    <div class="settings">
+      <button>⚙️  Settings</button>
+      <div>
+        <fieldset>
+          <legend>Input</legend>
+          <hr>
+          <ul>
+            <li>
+              <input type="checkbox" id="raw-input" name="raw-input">
+              <label for="raw-input">raw</label>
+            </li>
+            <li>
+              <input type="checkbox" id="slurp" name="slurp">
+              <label for="slurp">slurp</label>
+            </li>
+            <li>
+              <input type="checkbox" id="null-input" name="null-input">
+              <label for="null-input">null</label>
+            </li>
+          </ul>
+        </fieldset>
+        <fieldset>
+          <legend>Output</legend>
+          <hr>
+          <ul>
+            <li>
+              <input type="checkbox" id="raw-output" name="raw-output">
+              <label for="raw-output">raw</label>
+            </li>
+            <li>
+              <input type="checkbox" id="compact" name="compact">
+              <label for="compact">compact</label>
+            </li>
+            <!--
+            <li>
+              <input type="checkbox" id="join-output" name="join-output">
+              <label for="join-output">join</label>
+            </li>
+            -->
+            <li>
+              <input type="checkbox" id="tab" name="tab">
+              <label for="tab">tab</label>
+            </li>
+            <li>
+              <label for="indent">indent</label>
+              <input type="number" id="indent" name="indent" value="4" min="0" style="width: 3em">
+            </li>
+          </ul>
+        </fieldset>
+      </div>
+    </div>
+    <button>
+      <a href="https://gedenkt.at/jaq/manual" target="_blank">
+        📖 Manual
+      </a>
+    </button>
+    <div class="about">
+      <a href="https://github.com/01mf02/jaq" target="_blank">
+        <img src="./github-mark-white.svg" height="32px"/>
+      </a>
+    </div>
+  </header>
+
+  <section class="filter">
+    <header><h1>Filter</h1></header>
+    <textarea id="filter" spellcheck="false">.</textarea>
+  </section>
+
+  <div class="IO">
+    <section class="input">
+      <header><h1>Input</h1></header>
+      <textarea id="input" spellcheck="false">null</textarea>
+    </section>
+
+    <section class="output">
+      <header><h1>Output</h1></header>
+      <pre id="output"></div>
+    </section>
+  </div>
+  <!--
+  <div id="footer"></div>
+  -->
+  <script type="module">
+    import init from "./pkg/jaq_play.js";
+    await init();
+  </script>
+  <script type="module" src="./src/main.js" defer></script>
+</body>
+
+</html>

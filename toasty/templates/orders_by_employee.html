@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Orders for {{ employee_guid }} on {{ biz_date }}</h2>
+  <p>
+    <a href="/reports/net_sales_by_employee_daily.csv">← Back to Net Sales by Employee</a>
+  </p>
+  <input id="tableFilter" class="filter-input" placeholder="Filter..." oninput="filterTable()" />
+  <div class="table-wrap">
+    <table class="sortable filterable" id="ordersByEmployeeTable">
+      <thead>
+        <tr>
+          {% for h in headers %}
+            <th data-key="{{ h }}">{{ h }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            {% for h in headers %}
+              <td>
+                {% set val = row.get(h, '') %}
+                {% if 'guid' in h|lower and val %}
+                  <a href="/inspect/{{ val }}">{{ val }}</a>
+                {% else %}
+                  {{ val }}
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

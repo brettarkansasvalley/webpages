@@ -1,0 +1,50 @@
+{
+  "_description": "CONCEPTUAL: Net sales with nested aggregation (future feature)",
+  "_csv_source": "net_sales_by_employee_daily.csv",
+  "_feature": "nested_aggregation",
+  "_note": "This is a conceptual example of the proposed nested aggregation syntax",
+  "_status": "NOT YET IMPLEMENTED",
+  "query": {
+    "with": [
+      {
+        "name": "employee_base",
+        "query": {
+          "from": {
+            "source_file": "labor_v1_employees.json",
+            "alias": "emp"
+          },
+          "select": [
+            {"expr": "emp.guid", "alias": "employee_guid"},
+            {"expr": "concat(emp.firstName, ' ', emp.lastName)", "alias": "employee_name"}
+          ]
+        }
+      }
+    ],
+    "from_subquery": "employee_base",
+    
+    "_nested_join": {
+      "source": {
+        "source_file": "orders_v2_orders_20260130.json",
+        "alias": "o"
+      },
+      "path": "checks.payments",
+      "aliases": ["c", "p"],
+      "where": [
+        {"field": "c.voided", "op": "!=", "value": true},
+        {"field": "c.deleted", "op": "!=", "value": true}
+      ],
+      "join_on": {
+        "type": "coalesce",
+        "left_fields": ["p.server.guid", "o.server.guid"],
+        "right_field": "employee_base.employee_guid"
+      }
+    },
+    
+    "select": [
+      {"expr": "employee_base.employee_guid", "alias": "employee_guid"},
+      {"expr": "employee_base.employee_name", "alias": "employee_name"},
+      {"expr": "sum(c.amount)", "alias": "total_sales"},
+      {"expr": "count(distinct c.guid)", "alias": "checks_count"}
+    ]
+  }
+}

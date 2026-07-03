@@ -1,0 +1,26 @@
+job_guid,job_title,job_code,is_tipped,wage_frequency,default_wage
+1c70656b-b475-45c1-bbd8-c49b6412597a,Chef,,false,HOURLY,
+6292f576-da41-4b42-b1be-3855495748f7,Bartender,,true,HOURLY,
+474ac7f1-056b-4280-be90-0b48b902963a,Busser,,false,HOURLY,11.0
+362a58ff-dc1b-4de8-b863-4e5b34c62f20,Hostess,,false,HOURLY,
+036fc23f-fcc1-40c9-af52-d5a88e3290da,Assistant Manager,,false,HOURLY,23.0
+6af4c5f3-28c3-4afe-b8b4-36af5743850b,EW/WW Expo,,true,HOURLY,
+9f3d31c1-e1aa-41da-9ba3-ccbb0cbd4605,Dishwasher,,false,HOURLY,
+31de905c-e56d-4714-a17e-cfc977a595d8,Cleaning - Server,,false,HOURLY,13.75
+e5326552-c36c-47c8-89c6-ab0f7c76ac8a,Cleaning,,false,HOURLY,
+571df9d9-4906-4cff-be63-1998c696768d,Prep Cook,,false,HOURLY,
+29347321-8fa3-4eaf-a32c-9398bee4a20a,AM Sunset Server,,true,HOURLY,6.88
+dc5e1a38-b6fd-4977-b88a-80f549aecfcb,PM Sunset Server,,true,HOURLY,6.88
+988657a1-20b5-450b-b645-4b0f6bee1e31,AM Bar Sunset,,true,HOURLY,
+badb9547-f9cb-46d6-9160-6e3b559b4607,PM Bar Sunset,,true,HOURLY,
+265fabfa-f8ad-48e1-971d-0748dcada2a6,WW Server,,true,HOURLY,6.88
+11bf4a1c-c723-45c5-9305-fd3a40d21c09,EW Server,,true,HOURLY,6.88
+c5a4ac9f-a83a-4a43-be17-7a79f06ec754,WW Bar,,true,HOURLY,
+fff54ef3-ae09-4865-9e15-d839c4677920,Sunset Expo,,true,HOURLY,
+a2a6f80a-9ad1-448d-b378-9f0f066be1ef,Office Manager,,false,HOURLY,23.0
+1dedb04a-2bed-42f8-8668-ea67bc142be2,Bar Manager,,false,HOURLY,22.0
+6bd66ea1-b944-4592-8bc4-0027cb863cb7,Shift Manager,,false,HOURLY,25.0
+1ce9c501-3832-4e70-a53c-f6fc19deb64f,Cook,,false,HOURLY,
+343a2c29-8266-4c25-91ff-6d39fc18b575,Runner,,false,HOURLY,
+9d5e8153-b450-433c-abd8-ddda86a243e0,General Manager,,false,SALARY,
+31ec207e-4029-4ffc-bc57-5dc7ad2f94e8,Owner,,false,SALARY,

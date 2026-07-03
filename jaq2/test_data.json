@@ -1,0 +1,90 @@
+{
+  "arrays": {
+    "simple": [1, 2, 3, 4, 5],
+    "numbers": [1.5, 2.7, 3.14, 4.2, 5.99],
+    "strings": ["apple", "banana", "cherry", "date", "elderberry"],
+    "objects": [
+      {"name": "Alice", "age": 30, "city": "New York"},
+      {"name": "Bob", "age": 45, "city": "London"},
+      {"name": "Charlie", "age": 60, "city": "Paris"}
+    ],
+    "nested": [
+      {"product": "Laptop", "price": 999.99, "specs": {"ram": "16GB", "ssd": "1TB"}},
+      {"product": "Mouse", "price": 25.99, "specs": {"wireless": true}}
+    ],
+    "duplicates": [1, 2, 2, 3, 4, 5]
+  },
+  "objects": {
+    "simple": {
+      "id": 1,
+      "name": "Product",
+      "price": 19.99,
+      "in_stock": true,
+      "tags": ["electronics", "sale"]
+    },
+    "fields": {
+      "name": "Product Name",
+      "price": 19.99,
+      "in_stock": true,
+      "tags": ["electronics", "sale"]
+    },
+    "nested": {
+      "user": "alice",
+      "profile": {
+        "name": "Alice",
+        "age": 30,
+        "preferences": {
+          "color": "red",
+          "language": "en"
+        }
+      }
+    }
+  },
+  "strings": {
+    "simple": ["hello", "world", "zaq", "json", "query", "parser", "enhanced"],
+    "sentences": [
+      "The quick brown fox jumps over the lazy dog",
+      "zaq is an enhanced JSON query tool",
+      "Full query parser with 60+ functions"
+    ],
+    "substrings": ["app", "lea", "zaq", "enhanced", "query", "tool"],
+    "mixed": ["hello", 123, "true", "null", "{\"key\": \"value\"}"]
+  },
+  "math": {
+    "numbers": [1.4, 2.7, 3.14, 4.2, 5.99],
+    "integers": [1, 2, 3, 4, 5],
+    "floats": [1.5, 2.5, 3.5, 4.5, 5.5],
+    "negatives": [-1.4, -2.7, -3.14],
+    "for_sqrt": [4, 9, 16, 25, 36],
+    "for_log": [1, 2, 7, 10, 100, 1000]
+  },
+  "types": {
+    "mixed": [
+      {"value": "string", "type": "string"},
+      {"value": 123, "type": "number"},
+      {"value": true, "type": "boolean"},
+      {"value": null, "type": "null"},
+      {"value": [1, 2, 3], "type": "array"},
+      {"value": {"key": "value"}, "type": "object"}
+    ]
+  },
+  "aggregation": {
+    "data": [10, 20, 30, 40, 50],
+    "empty": [],
+    "single": [42],
+    "large": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  },
+  "paths": {
+    "flat": {"users": ["alice", "bob", "charlie"], "settings": {"theme": "dark", "notifications": true}},
+    "nested": {
+      "products": [
+        {"id": 1, "name": "Laptop", "category": "Electronics"},
+        {"id": 2, "name": "Mouse", "category": "Electronics"}
+      ],
+      "categories": {
+        "Electronics": ["Laptop", "Mouse", "Keyboard", "Monitor"],
+        "Accessories": ["Cable", "Case", "Sticker"]
+      }
+    }
+  }
+}

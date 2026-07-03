@@ -1,0 +1,604 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  /* Make preview table wrap nicely to avoid horizontal scrolling on 1080x800 */
+  #preview-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+  #preview-table th, #preview-table td { padding: 6px; vertical-align: top; }
+  #preview-table th:nth-child(1) { width: 18%; }
+  #preview-table th:nth-child(2),
+  #preview-table th:nth-child(3),
+  #preview-table th:nth-child(4),
+  #preview-table th:nth-child(5),
+  #preview-table th:nth-child(6),
+  #preview-table th:nth-child(7) { width: 10%; }
+  #preview-table th:nth-child(8),
+  #preview-table th:nth-child(9) { width: 14%; }
+  #preview-table th:nth-child(10) { width: 14%; }
+  #preview-table td, #preview-table th { white-space: normal; word-break: break-word; }
+  #preview-table td.status-pushed, #preview-table td.status-committed { line-height: 1.2; }
+  #preview-table td.status-pushed div, #preview-table td.status-committed div { margin: 0; }
+  #preview-table button.btn-push, #preview-table button.btn-undo { display: inline-block; margin: 2px 0; padding: 4px 8px; }
+  /* Colorize action buttons */
+  #preview-table button.btn-push { background-color: #16a34a; color: #fff; border: none; border-radius: 4px; }
+  #preview-table button.btn-push:hover { background-color: #15803d; }
+  #preview-table button.btn-undo { background-color: #dc2626; color: #fff; border: none; border-radius: 4px; }
+  #preview-table button.btn-undo:hover { background-color: #b91c1c; }
+  /* Highlight cells when non-zero amounts exist */
+  #preview-table td.status-pushed.has-unpaid { background-color: #fef08a; } /* yellow-200 */
+  #preview-table td.status-committed.has-committed { background-color: #d1fae5; } /* emerald-100 */
+</style>
+
+<form method="post" action="/bartender-tips" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+  <label>
+    Date:
+    <input type="date" name="biz_date" value="{{ today }}" required style="padding:8px; min-width:180px;">
+  </label>
+  <div style="display:flex; flex-direction:column; gap:6px; min-width:320px; min-height:150px;">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-weight:600;">Bartenders:</span>
+      <span id="bartender-count" class="pill">0 selected</span>
+      <button type="button" id="btn-unselect-all" style="margin-left:8px; padding:4px 8px;">Unselect All</button>
+      <label style="margin-left:auto; display:flex; align-items:center; gap:6px; font-weight:500;">
+        <input type="checkbox" id="show-all-bartenders" />
+        <span>Show all</span>
+      </label>
+    </div>
+    <div id="bartenders-list" class="big-scroll" style="padding:10px; min-width:320px; max-height:312px; overflow:auto; border:1px solid #ccc; border-radius:6px;">
+      {% for w in workers %}
+        <label style="display:flex; align-items:center; gap:8px; padding:2px 0;">
+          <input type="checkbox" name="bartender_names" value="{{ w }}">
+          <span>{{ w }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <small>Select one or more bartenders; amounts will be split equally.</small>
+  </div>
+  <label>
+    Bucket:
+    <select name="bucket" required style="padding:8px; min-width:160px;">
+      <option value="" disabled selected>Select bucket</option>
+      {% for bid, bname in buckets %}
+        <option value="{{ bid }}">{{ bname }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="form-grid" style="width:100%;">
+    <div class="card">
+      <h3>Main Figures</h3>
+      <div class="row">
+        <label>Cash Tips
+          <input type="number" step="0.01" name="cashtips" value="0" style="padding:6px; width:140px;">
+        </label>
+        <label>Non-Cash tips
+          <input type="number" step="0.01" name="creditcardtip" value="0" style="padding:6px; width:140px;">
+        </label>
+        <label>Net Sales
+          <input type="number" step="0.01" name="netsales" value="0" style="padding:6px; width:140px;">
+        </label>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h3>Add Tips for Payout</h3>
+      <div class="row">
+        <label>Bussertips
+          <input type="number" step="0.01" name="servertips" value="0" style="padding:6px; width:140px;">
+        </label>
+        <label>Expotips
+          <input type="number" step="0.01" name="expotips" value="0" style="padding:6px; width:140px;">
+        </label>
+        <label>Runnertips
+          <input type="number" step="0.01" name="runnertips" value="0" style="padding:6px; width:140px;">
+        </label>
+      </div>
+      <small>These amounts will be split equally among the selected bartenders.</small>
+    </div>
+  </div>
+  <!-- Full-width Preview below grid -->
+  <div style="width:100%;">
+    <div id="preview-table-card" class="card" style="margin-top:12px; display:none;">
+      <h3 style="margin-top:0;">Per-Bartender Split Preview</h3>
+      <div class="table-wrap">
+        <table id="preview-table">
+          <thead>
+            <tr>
+              <th>Bartender</th>
+              <th>Cash Tips</th>
+              <th>Non-Cash tips</th>
+              <th>Net Sales</th>
+              <th>Bussertips</th>
+              <th>Expotips</th>
+              <th>Runnertips</th>
+              <th>Pushed (unpaid)</th>
+              <th>Committed</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <small style="color:#666;">Values are split equally among selected bartenders.</small>
+      <div id="preview-note" style="margin-top:6px; color:#666;"></div>
+    </div>
+  </div>
+  <!-- Full-width Category breakdown below Preview -->
+  <div style="width:100%;">
+    <div id="category-card" class="card" style="display:none;">
+      <h3>Per-Category Sales and Tip Calculations</h3>
+      <div class="table-wrap">
+        <table id="category-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Sales</th>
+              <th>Servertips (2%)</th>
+              <th>Expotips (1% Food)</th>
+              <th>Runnertips (0.5% Food)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <button type="submit" style="padding:8px 12px;">Save Group</button>
+</form>
+
+<script>
+(function(){
+  const dateEl = document.querySelector('input[name="biz_date"]');
+  const bucketEl = document.querySelector('select[name="bucket"]');
+  const cashEl = document.querySelector('input[name="cashtips"]');
+  const ccEl = document.querySelector('input[name="creditcardtip"]');
+  const netEl = document.querySelector('input[name="netsales"]');
+  const bussEl = document.querySelector('input[name="servertips"]');
+  const expoEl = document.querySelector('input[name="expotips"]');
+  const runEl = document.querySelector('input[name="runnertips"]');
+  const bartendersListEl = document.getElementById('bartenders-list');
+  const cardEl = document.getElementById('preview-table-card');
+  const tableBody = document.querySelector('#preview-table tbody');
+  const noteEl = document.getElementById('preview-note');
+  const bartenderCountEl = document.getElementById('bartender-count');
+  const showAllChk = document.getElementById('show-all-bartenders');
+  // Persist selections
+  const LS_DATE = 'bartenderTips.date';
+  const LS_BUCKET = 'bartenderTips.bucket';
+  const LS_SHOW_ALL = 'bartenderTips.showAll';
+
+  function recalcFromNet(){
+    const net = Number(netEl && netEl.value ? netEl.value : 0) || 0;
+    // Simple recommended allocations based on net sales
+    const busser = net * 0.02;   // 2%
+    const expo   = net * 0.01;   // 1%
+    const runner = net * 0.005;  // 0.5%
+    if (bussEl) bussEl.value = busser.toFixed(2);
+    if (expoEl) expoEl.value = expo.toFixed(2);
+    if (runEl) runEl.value = runner.toFixed(2);
+    updatePreview();
+  }
+
+  function saveSelections(){
+    try {
+      if (dateEl && dateEl.value) localStorage.setItem(LS_DATE, dateEl.value);
+      if (bucketEl && bucketEl.value) localStorage.setItem(LS_BUCKET, bucketEl.value);
+      if (showAllChk) localStorage.setItem(LS_SHOW_ALL, showAllChk.checked ? '1' : '0');
+    } catch (_) {}
+  }
+
+  function prefillSelections(){
+    try {
+      let changed = false;
+      const svDate = localStorage.getItem(LS_DATE);
+      if (dateEl && svDate && dateEl.value !== svDate){ dateEl.value = svDate; changed = true; }
+      const svBucket = localStorage.getItem(LS_BUCKET);
+      if (bucketEl && svBucket && bucketEl.value !== svBucket){
+        // Only set if option exists
+        const opt = Array.from(bucketEl.options || []).find(o => o.value === svBucket);
+        if (opt){ bucketEl.value = svBucket; changed = true; }
+      }
+      const svAll = localStorage.getItem(LS_SHOW_ALL);
+      if (showAllChk && (svAll === '1' || svAll === '0')){
+        const boolAll = (svAll === '1');
+        if (showAllChk.checked !== boolAll){ showAllChk.checked = boolAll; changed = true; }
+      }
+      return changed;
+    } catch (_) { return false; }
+  }
+
+  function rebuildBartendersList(names, autoSelectNames){
+    if (!bartendersListEl) return;
+    const selected = new Set(getSelectedBartenders());
+    const autoSel = new Set(Array.isArray(autoSelectNames) ? autoSelectNames : []);
+    bartendersListEl.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    names.forEach(w => {
+      const lab = document.createElement('label');
+      lab.style.cssText = 'display:flex; align-items:center; gap:8px; padding:2px 0;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.name = 'bartender_names';
+      cb.value = w;
+      if (selected.has(w) || autoSel.has(w)) cb.checked = true;
+      const span = document.createElement('span');
+      span.textContent = w;
+      lab.appendChild(cb);
+      lab.appendChild(span);
+      frag.appendChild(lab);
+    });
+    bartendersListEl.appendChild(frag);
+    // Rewire change listener after rebuild
+    bartendersListEl.addEventListener('change', () => { updatePreview(); updateBartenderCount(); }, { once: true });
+    updateBartenderCount();
+    updatePreview();
+  }
+
+  async function loadBartenders(){
+    const date = dateEl && dateEl.value;
+    const showAll = showAllChk && showAllChk.checked ? 1 : 0;
+    const bucket = bucketEl && bucketEl.value;
+    try {
+      let url = '';
+      if (showAll) {
+        // Show all bartenders with any 'bar' job title
+        url = '/api/employees/bar';
+      } else {
+        if (!date || !bucket) { rebuildBartendersList([], []); return; }
+        // Map bucket to title substrings
+        const displayById = { 'am_bar': 'AM', 'westwing': 'West Wing', 'sunset': 'Sunset', 'eastwing': 'East Wing' };
+        const disp = displayById[bucket] || bucket;
+        const map = {
+          'AM': ['am bar sunset','am bar'],
+          'Sunset': ['pm bar sunset','pm bar - sunset','sunset bar','low bar'],
+          'West Wing': ['ww bar','west wing bar']
+        };
+        const titles = (map[disp] || []).join(',');
+        url = `/api/shifts/by-title?date=${encodeURIComponent(date)}&titles=${encodeURIComponent(titles)}&exclude_placeholders=1`;
+      }
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      let names = Array.isArray(data.workers) ? data.workers : [];
+      // Hide placeholder bar entries unless "Show all" is checked
+      if (!showAll) {
+        const blocked = new Set(['low bar','am bar','ww bar']);
+        names = names.filter(n => !blocked.has(String(n||'').trim().toLowerCase()));
+      }
+      // Determine auto-select set: if showAll=0, preselect all shift-matched names
+      let autoSelect = showAll ? [] : [...names];
+      if (bucket) {
+        try {
+          const u2 = `/api/bartender/pushed-list?date=${encodeURIComponent(date)}&bucket=${encodeURIComponent(bucket)}&include_committed=1`;
+          const r2 = await fetch(u2, { cache: 'no-store' });
+          if (r2.ok) {
+            const d2 = await r2.json();
+            if (Array.isArray(d2.workers)) {
+              const set = new Set(autoSelect);
+              d2.workers.forEach(n => set.add(n));
+              autoSelect = Array.from(set);
+            }
+          }
+        } catch (_) {}
+      }
+      try { console.debug('[loadBartenders]', { url, showAll, date, bucket, count: names.length }); } catch (_){ }
+      rebuildBartendersList(names, autoSelect);
+    } catch (e) { /* ignore */ }
+  }
+
+  function getSelectedBartenders(){
+    const out = [];
+    if (!bartendersListEl) return out;
+    const checks = bartendersListEl.querySelectorAll('input[type="checkbox"]:checked');
+    checks.forEach(chk => out.push(chk.value));
+    return out;
+  }
+
+  function updateBartenderCount(){
+    const n = getSelectedBartenders().length;
+    if (bartenderCountEl) bartenderCountEl.textContent = `${n} selected`;
+  }
+
+  function toNum(el){
+    return Number(el && el.value ? el.value : 0) || 0;
+  }
+
+  function updatePreview(){
+    const names = getSelectedBartenders();
+    const n = names.length;
+    if (!tableBody || !cardEl) return;
+    tableBody.innerHTML = '';
+    if (n === 0) { cardEl.style.display = 'none'; updateBartenderCount(); return; }
+    const cash = toNum(cashEl);
+    const cc = toNum(ccEl);
+    const net = toNum(netEl);
+    const buss = toNum(bussEl);
+    const expo = toNum(expoEl);
+    const run = toNum(runEl);
+    const per = {
+      cash: cash / n,
+      cc: cc / n,
+      net: net / n,
+      buss: buss / n,
+      expo: expo / n,
+      run: run / n,
+    };
+    for (const name of names) {
+      const tr = document.createElement('tr');
+      const safe = name.replaceAll('<','&lt;');
+      tr.setAttribute('data-name', name);
+      tr.innerHTML = `
+        <td>${safe}</td>
+        <td class="per-cash">${per.cash.toFixed(2)}</td>
+        <td class="per-cc">${per.cc.toFixed(2)}</td>
+        <td class="per-net">${per.net.toFixed(2)}</td>
+        <td class="per-buss">${per.buss.toFixed(2)}</td>
+        <td class="per-expo">${per.expo.toFixed(2)}</td>
+        <td class="per-run">${per.run.toFixed(2)}</td>
+        <td class="status-pushed">—</td>
+        <td class="status-committed">—</td>
+        <td>
+          <button type="button" class="btn-push" title="Record these per-bartender payouts">Push</button>
+          <button type="button" class="btn-undo" title="Undo unpaid payouts for this bartender">Undo</button>
+        </td>
+      `;
+      tableBody.appendChild(tr);
+    }
+    cardEl.style.display = '';
+    if (noteEl) noteEl.textContent = `${n} bartender${n>1?'s':''} selected; each shows 1/${n} of totals.`;
+    updateBartenderCount();
+    wireRowButtons();
+    refreshStatusAll();
+  }
+
+  async function loadDefaults(){
+    const date = dateEl && dateEl.value;
+    const bucket = bucketEl && bucketEl.value;
+    if (!date || !bucket) return;
+    try {
+      const u = `/api/bartender-defaults?date=${encodeURIComponent(date)}&bucket=${encodeURIComponent(bucket)}`;
+      const res = await fetch(u, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (typeof data.cash_tips === 'number') cashEl.value = Number(data.cash_tips||0).toFixed(2);
+      if (typeof data.credit_card_tips === 'number') ccEl.value = Number(data.credit_card_tips||0).toFixed(2);
+      if (typeof data.net_sales === 'number') netEl.value = Number(data.net_sales||0).toFixed(2);
+      // Prefer API-provided servertips/expotips/runnertips suggestions over net-based heuristics
+      if (typeof data.servertips === 'number') bussEl.value = Number(data.servertips||0).toFixed(2);
+      if (typeof data.expotips === 'number') expoEl.value = Number(data.expotips||0).toFixed(2);
+      if (typeof data.runnertips === 'number') runEl.value = Number(data.runnertips||0).toFixed(2);
+      // Render category breakdown table if provided
+      try {
+        const card = document.getElementById('category-card');
+        const tbody = document.querySelector('#category-table tbody');
+        if (card && tbody) {
+          tbody.innerHTML = '';
+          const totals = data.category_totals || {};
+          const br = data.category_tip_breakdown || {};
+          const rows = [];
+          let sumSales = 0, sumSv=0, sumEx=0, sumRn=0;
+          const cats = ['Food','Wine','Draft Beer','Liquor','NA Beverage','Bottled Beer','Bottled Wine'];
+          cats.forEach(cat => {
+            const s = Number((totals && totals[cat]) || 0);
+            const sv = Number((br.servertips && br.servertips[cat]) || 0);
+            const ex = Number((br.expotips && br.expotips[cat]) || 0);
+            const rn = Number((br.runnertips && br.runnertips[cat]) || 0);
+            if (s>0 || sv>0 || ex>0 || rn>0) {
+              sumSales+=s; sumSv+=sv; sumEx+=ex; sumRn+=rn;
+              rows.push([cat, s, sv, ex, rn]);
+            }
+          });
+          // Populate rows
+          for (const r of rows){
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${r[0]}</td><td>${r[1].toFixed(2)}</td><td>${r[2].toFixed(2)}</td><td>${r[3].toFixed(2)}</td><td>${r[4].toFixed(2)}</td>`;
+            tbody.appendChild(tr);
+          }
+          // Total row
+          const trT = document.createElement('tr');
+          trT.innerHTML = `<td><strong>Total</strong></td><td><strong>${sumSales.toFixed(2)}</strong></td><td><strong>${sumSv.toFixed(2)}</strong></td><td><strong>${sumEx.toFixed(2)}</strong></td><td><strong>${sumRn.toFixed(2)}</strong></td>`;
+          tbody.appendChild(trT);
+          card.style.display = '';
+        }
+      } catch(_) {}
+      updatePreview();
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (dateEl) {
+    dateEl.addEventListener('change', () => { 
+      if (showAllChk && showAllChk.checked) { 
+        showAllChk.checked = false; 
+      }
+      saveSelections(); loadDefaults(); loadBartenders(); 
+    });
+  }
+  if (bucketEl) bucketEl.addEventListener('change', () => { 
+    if (showAllChk && showAllChk.checked) { 
+      showAllChk.checked = false; 
+    }
+    saveSelections(); loadDefaults(); loadBartenders(); 
+  });
+  if (netEl) netEl.addEventListener('input', recalcFromNet);
+  if (cashEl) cashEl.addEventListener('input', updatePreview);
+  if (ccEl) ccEl.addEventListener('input', updatePreview);
+  if (bussEl) bussEl.addEventListener('input', updatePreview);
+  if (expoEl) expoEl.addEventListener('input', updatePreview);
+  if (runEl) runEl.addEventListener('input', updatePreview);
+  if (bartendersListEl) bartendersListEl.addEventListener('change', () => { updatePreview(); updateBartenderCount(); });
+  // Unselect All button
+  const unselectBtn = document.getElementById('btn-unselect-all');
+  if (unselectBtn) {
+    unselectBtn.addEventListener('click', () => {
+      try {
+        const checks = bartendersListEl ? bartendersListEl.querySelectorAll('input[type="checkbox"]') : [];
+        checks.forEach(cb => { cb.checked = false; });
+        updatePreview();
+        updateBartenderCount();
+      } catch (_) { /* no-op */ }
+    });
+  }
+  // Initial attempt after page load
+  window.addEventListener('DOMContentLoaded', () => {
+    const changed = prefillSelections();
+    loadDefaults();
+    loadBartenders();
+    updateBartenderCount();
+    // Save current on first load
+    saveSelections();
+  });
+  if (showAllChk) showAllChk.addEventListener('change', () => { saveSelections(); loadBartenders(); });
+
+  function currentPerAmounts(){
+    const names = getSelectedBartenders();
+    const n = names.length || 1;
+    return {
+      buss: (toNum(bussEl) / n),
+      expo: (toNum(expoEl) / n),
+      run:  (toNum(runEl) / n),
+    };
+  }
+
+  function wireRowButtons(){
+    const rows = tableBody.querySelectorAll('tr');
+    rows.forEach(tr => {
+      const name = tr.getAttribute('data-name') || '';
+      const pushBtn = tr.querySelector('.btn-push');
+      const undoBtn = tr.querySelector('.btn-undo');
+      if (pushBtn) pushBtn.onclick = () => doPush(name, tr);
+      if (undoBtn) undoBtn.onclick = () => doUndo(name, tr);
+    });
+  }
+
+  async function doPush(name, tr){
+    const date = dateEl && dateEl.value; const bucket = bucketEl && bucketEl.value;
+    if (!date || !bucket || !name) return;
+    const per = currentPerAmounts();
+    // Confirm when all per-person payout amounts are zero to avoid silent no-op pushes
+    try {
+      const isZero = (v) => Math.abs(Number(v || 0)) < 1e-9;
+      if (isZero(per.buss) && isZero(per.expo) && isZero(per.run)) {
+        const proceed = window.confirm('All Busser/Expo/Runner per-person amounts are 0.00. Push anyway?');
+        if (!proceed) return;
+      }
+    } catch(_) { /* ignore */ }
+    // Extract per-bartender main figures from the preview row cells
+    const perCash = (() => { try { return Number(tr.querySelector('.per-cash')?.textContent || 0) || 0; } catch(_) { return 0; } })();
+    const perCredit = (() => { try { return Number(tr.querySelector('.per-cc')?.textContent || 0) || 0; } catch(_) { return 0; } })();
+    const perNet = (() => { try { return Number(tr.querySelector('.per-net')?.textContent || 0) || 0; } catch(_) { return 0; } })();
+    const btn = tr.querySelector('.btn-push'); if (btn) { btn.disabled = true; btn.textContent = 'Pushing...'; }
+    try {
+      const res = await fetch('/api/bartender/push', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bartender: name, date, bucket, bussertips: per.buss, expotips: per.expo, runnertips: per.run, per_cash: perCash, per_credit: perCredit, per_net: perNet })
+      });
+      await res.json().catch(()=>({}));
+      await refreshStatus(name, tr);
+    } catch (e) {
+      // ignore
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Push'; }
+    }
+  }
+
+  async function doUndo(name, tr){
+    const date = dateEl && dateEl.value; const bucket = bucketEl && bucketEl.value;
+    if (!date || !bucket || !name) return;
+    const btn = tr.querySelector('.btn-undo'); if (btn) { btn.disabled = true; btn.textContent = 'Undoing...'; }
+    try {
+      const res = await fetch('/api/bartender/undo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bartender: name, date, bucket })
+      });
+      await res.json().catch(()=>({}));
+      await refreshStatus(name, tr);
+    } catch (e) {
+      // ignore
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Undo'; }
+    }
+  }
+
+  async function refreshStatus(name, tr){
+    const date = dateEl && dateEl.value; const bucket = bucketEl && bucketEl.value;
+    if (!date || !bucket || !name) return;
+    try {
+      const u = `/api/bartender/status?bartender=${encodeURIComponent(name)}&bucket=${encodeURIComponent(bucket)}&date=${encodeURIComponent(date)}`;
+      const res = await fetch(u, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const pushedEl = tr.querySelector('.status-pushed');
+      const committedEl = tr.querySelector('.status-committed');
+      function fmtSumHTML(obj){
+        if (!obj) return '<span>—</span>';
+        const b = Number(obj.Busser||0).toFixed(2);
+        const e = Number(obj.Expo||0).toFixed(2);
+        const r = Number(obj.Runner||0).toFixed(2);
+        return `<div>Busser: ${b}</div><div>Expo: ${e}</div><div>Runner: ${r}</div>`;
+      }
+      // Determine highlight flags based on any non-zero sums OR if any unpaid rows exist (even if zero-amount)
+      const pushedSum = (Number((data && data.pushed && data.pushed.Busser) || 0) + Number((data && data.pushed && data.pushed.Expo) || 0) + Number((data && data.pushed && data.pushed.Runner) || 0));
+      const pushedHasAnyRows = Number(data && data.pushed_count) > 0;
+      const pushedHas = !!(pushedSum > 0 || pushedHasAnyRows);
+      const committedHas = !!(data && data.committed && ((Number(data.committed.Busser||0) + Number(data.committed.Expo||0) + Number(data.committed.Runner||0)) > 0));
+      if (pushedEl) {
+        pushedEl.classList.add('status-pushed');
+        pushedEl.innerHTML = fmtSumHTML(data.pushed);
+        pushedEl.classList.toggle('has-unpaid', pushedHas);
+      }
+      if (committedEl) {
+        committedEl.classList.add('status-committed');
+        committedEl.innerHTML = fmtSumHTML(data.committed);
+        committedEl.classList.toggle('has-committed', committedHas);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function refreshStatusAll(){
+    const rows = tableBody.querySelectorAll('tr');
+    for (const tr of rows) {
+      const name = tr.getAttribute('data-name') || '';
+      await refreshStatus(name, tr);
+    }
+  }
+})();
+</script>
+
+{% if result %}
+  {% if result.errors and result.errors|length > 0 %}
+    <div style="margin-top:12px; color:#b00;">
+      <strong>Errors:</strong>
+      <ul>
+        {% for e in result.errors %}
+        <li>{{ e }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <div style="margin-top:12px;">
+      {% if result.saved %}
+      <p style="color:#0a0;"><strong>Saved.</strong></p>
+      {% endif %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Bartenders</th><th>Bar</th><th>Bucket</th><th>Total Payout Tips</th><th>Gross Tip %</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>{{ result.biz_date }}</td>
+              <td>
+                {% if result.bartender_names %}
+                  {{ result.bartender_names | join(', ') }}
+                {% endif %}
+              </td>
+              <td>{{ result.bar_name }}</td>
+              <td>{{ result.bucket }}</td>
+              <td>{{ '%.2f'|format(result.payout_tips) }}</td>
+              <td>{{ result.gross_tip_pct }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

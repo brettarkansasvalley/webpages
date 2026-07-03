@@ -1,0 +1,15 @@
+{
+  "_description": "Payments summary by type from orders_v2_payments_20260130.json",
+  "_csv_source": "payments_tips_daily.csv",
+  "_note": "Payments data structure may vary - this queries the payments endpoint data",
+  "query": {
+    "from": {
+      "source_file": "orders_v2_payments_20260130.json",
+      "alias": "p"
+    },
+    "select": [
+      {"expr": "p", "alias": "payment_guid"}
+    ],
+    "limit": 10
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "_description": "Jobs reference data - Maps job GUIDs to titles",
+  "_csv_source": "Derived from labor_v1_jobs.json",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_jobs.json",
+      "alias": "job"
+    },
+    "select": [
+      {"expr": "job.guid", "alias": "job_guid"},
+      {"expr": "job.title", "alias": "job_title"},
+      {"expr": "job.code", "alias": "job_code"},
+      {"expr": "job.tipped", "alias": "is_tipped"},
+      {"expr": "job.wageFrequency", "alias": "wage_frequency"},
+      {"expr": "job.defaultWage", "alias": "default_wage"}
+    ]
+  }
+}

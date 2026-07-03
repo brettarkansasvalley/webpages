@@ -1,0 +1,25 @@
+{
+  "_description": "Active employees only (not deleted)",
+  "_csv_source": "employees.csv (filtered)",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_employees.json",
+      "alias": "emp"
+    },
+    "where": [
+      {"field": "emp.deleted", "op": "=", "value": false}
+    ],
+    "select": [
+      {"expr": "emp.guid", "alias": "guid"},
+      {"expr": "emp.v2EmployeeGuid", "alias": "v2EmployeeGuid"},
+      {"expr": "emp.firstName", "alias": "firstName"},
+      {"expr": "emp.lastName", "alias": "lastName"},
+      {"expr": "emp.email", "alias": "email"},
+      {"expr": "emp.phoneNumber", "alias": "phoneNumber"}
+    ],
+    "order_by": [
+      {"field": "emp.lastName", "direction": "asc"},
+      {"field": "emp.firstName", "direction": "asc"}
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "_description": "List of payment GUIDs available (reference only)",
+  "_note": "Full payment data would need to be fetched from Toast API",
+  "query": {
+    "from": {
+      "source_file": "orders_v2_payments_20260130.json",
+      "alias": "payment_guid"
+    },
+    "select": [
+      {"expr": "payment_guid", "alias": "guid"}
+    ],
+    "limit": 100
+  }
+}

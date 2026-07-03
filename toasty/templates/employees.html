@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Employees</h2>
+  <input id="tableFilter" class="filter-input" placeholder="Filter..." oninput="filterTable()" />
+  <div class="table-wrap">
+    <table class="sortable filterable" id="employeesTable">
+      <thead>
+        <tr>
+          {% for c in cols %}
+            <th data-key="{{ c }}">{{ c }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            {% for c in cols %}
+              <td>
+                {% set val = row.get(c, '') %}
+                {# Special rendering for jobTitles: list of {guid,title} #}
+                {% if c == 'jobTitles' and val %}
+                  {% for jt in val %}
+                    <a href="/inspect/{{ jt.guid }}">{{ jt.title }}</a>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                {% elif 'guid' in c|lower and val %}
+                  <a href="/inspect/{{ val }}">{{ val }}</a>
+                {% else %}
+                  {{ val }}
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{
+  "_description": "Discounts daily - replicate discounts_daily.csv",
+  "_csv_source": "discounts_daily.csv",
+  "_features": ["explode_with_context"],
+  "query": {
+    "from": {
+      "source_file": "orders_full_20251213.json",
+      "alias": "o",
+      "explode_with_context": {
+        "path": "checks.selections.appliedDiscounts",
+        "aliases": ["c", "sel", "disc"],
+        "where": [
+          {"field": "sel.voided", "op": "!=", "value": true}
+        ]
+      }
+    },
+    "group_by": [
+      {"field": "disc.name", "alias": "discount_name"}
+    ],
+    "select": [
+      {"expr": "o.businessDate", "alias": "date"},
+      {"expr": "disc.name", "alias": "discount_name"},
+      {"expr": "disc.discountAmount", "alias": "total_discount", "agg": "sum"},
+      {"expr": "disc.guid", "alias": "discount_count", "agg": "count"}
+    ],
+    "order_by": [
+      {"field": "total_discount", "direction": "desc"}
+    ]
+  }
+}

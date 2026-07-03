@@ -1,0 +1,57 @@
+{
+  "description": "Demonstrates higher-order functions: map, filter, reduce",
+  "let": {
+    "numbers": {"literal": [1, 2, 3, 4, 5]},
+    "squared": {
+      "map": {
+        "array": {"var": "numbers"},
+        "function": {
+          "lambda": {
+            "params": ["x"],
+            "body": {
+              "multiply": [{"var": "x"}, {"var": "x"}]
+            }
+          }
+        }
+      }
+    },
+    "evens": {
+      "filter": {
+        "array": {"var": "numbers"},
+        "predicate": {
+          "lambda": {
+            "params": ["x"],
+            "body": {
+              "eq": [
+                {"modulo": [{"var": "x"}, {"literal": 2}]},
+                {"literal": 0}
+              ]
+            }
+          }
+        }
+      }
+    },
+    "sum": {
+      "reduce": {
+        "array": {"var": "numbers"},
+        "function": {
+          "lambda": {
+            "params": ["acc", "x"],
+            "body": {"add": [{"var": "acc"}, {"var": "x"}]}
+          }
+        },
+        "initial": {"literal": 0}
+      }
+    }
+  },
+  "from": {
+    "source_file": "data.json",
+    "alias": "d"
+  },
+  "select": [
+    {"expr": "d.id", "alias": "ID"},
+    {"expression": {"var": "squared"}, "alias": "SquaredNumbers"},
+    {"expression": {"var": "evens"}, "alias": "EvenNumbers"},
+    {"expression": {"var": "sum"}, "alias": "SumOfNumbers"}
+  ]
+}

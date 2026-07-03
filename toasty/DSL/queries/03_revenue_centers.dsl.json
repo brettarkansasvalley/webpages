@@ -1,0 +1,15 @@
+{
+  "_description": "Revenue centers reference data",
+  "_csv_source": "Derived from config_v2_revenueCenters.json",
+  "query": {
+    "from": {
+      "source_file": "config_v2_revenueCenters.json",
+      "alias": "rc"
+    },
+    "select": [
+      {"expr": "rc.guid", "alias": "guid"},
+      {"expr": "rc.name", "alias": "name"},
+      {"expr": "rc.description", "alias": "description"}
+    ]
+  }
+}

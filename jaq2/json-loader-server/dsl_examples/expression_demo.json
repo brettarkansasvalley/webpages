@@ -1,0 +1,50 @@
+{
+  "description": "Demonstrates the new Expression system with let bindings and function calls",
+  "let": {
+    "prices": {
+      "field_access": {
+        "object": {"var": "o"},
+        "field": "items.price"
+      }
+    },
+    "quantities": {
+      "field_access": {
+        "object": {"var": "o"},
+        "field": "items.quantity"
+      }
+    },
+    "total_price": {
+      "call": {
+        "name": "sum",
+        "args": [{"var": "prices"}]
+      }
+    }
+  },
+  "from": {
+    "source_file": "orders.json",
+    "alias": "o"
+  },
+  "select": [
+    {"expr": "o.id", "alias": "OrderID"},
+    {
+      "expression": {"var": "total_price"},
+      "alias": "TotalPrice"
+    },
+    {
+      "expression": {
+        "call": {"name": "length", "args": [{"var": "prices"}]}
+      },
+      "alias": "ItemCount"
+    },
+    {
+      "expression": {
+        "multiply": [
+          {"var": "total_price"},
+          {"literal": 1.08}
+        ]
+      },
+      "alias": "TotalWithTax"
+    }
+  ],
+  "limit": 10
+}

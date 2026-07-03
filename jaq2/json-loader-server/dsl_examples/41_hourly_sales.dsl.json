@@ -1,0 +1,34 @@
+{
+  "_description": "Hourly sales daily - replicate hourly_sales_daily.csv",
+  "_csv_source": "hourly_sales_daily.csv",
+  "_features": ["explode_with_context", "date_functions"],
+  "query": {
+    "from": {
+      "source_file": "orders_full_20251213.json",
+      "alias": "o",
+      "explode_with_context": {
+        "path": "checks",
+        "aliases": ["c"],
+        "where": [
+          {"field": "c.voided", "op": "!=", "value": true},
+          {"field": "c.deleted", "op": "!=", "value": true}
+        ]
+      }
+    },
+    "where": [
+      {"field": "c.closedDate", "op": "is_not_null"}
+    ],
+    "group_by": [
+      {"field": "hour(c.closedDate)", "alias": "hour"}
+    ],
+    "select": [
+      {"expr": "o.businessDate", "alias": "date"},
+      {"expr": "hour(c.closedDate)", "alias": "hour"},
+      {"expr": "c.amount", "alias": "net_sales", "agg": "sum"},
+      {"expr": "c.guid", "alias": "check_count", "agg": "count"}
+    ],
+    "order_by": [
+      {"field": "hour", "direction": "asc"}
+    ]
+  }
+}

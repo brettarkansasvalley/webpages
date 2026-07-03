@@ -1,0 +1,16 @@
+{
+  "_description": "List all payment GUIDs from primitive value records",
+  "_csv_source": "orders_v2_payments_20260130.json",
+  "_feature": "primitive_value",
+  "query": {
+    "from": {
+      "source_file": "orders_v2_payments_20260130.json",
+      "alias": "p",
+      "as_primitive": "guid"
+    },
+    "select": [
+      {"expr": "p.guid", "alias": "payment_guid"}
+    ],
+    "limit": 100
+  }
+}

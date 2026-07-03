@@ -1,0 +1,583 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  /* Scoped to this page only */
+  main.container { padding-top: 0 !important; }
+  h2 { margin: 0; padding: 0; }
+  h2 + * { margin-top: 0 !important; }
+  /* Compact, wrap-friendly tables for small screens */
+  .table-wrap table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+  .table-wrap th, .table-wrap td { padding: 6px; vertical-align: top; white-space: normal; word-break: break-word; }
+  /* Unpaid summary widths (scoped) */
+  #unpaid-summary thead tr th:nth-child(1) { width: 40%; }
+  #unpaid-summary thead tr th:nth-child(2),
+  #unpaid-summary thead tr th:nth-child(3) { width: 30%; }
+  /* Distribution preview table hints */
+  .table-wrap thead tr th { font-weight: 600; }
+  /* Preview tables: prevent vertical header wrapping and use auto layout */
+  #preview-summary table, #preview-section table { table-layout: auto !important; }
+  #preview-summary th, #preview-section th { white-space: nowrap; writing-mode: horizontal-tb; }
+  #preview-summary th abbr, #preview-section th abbr { text-decoration: none; border-bottom: 1px dotted #999; }
+  /* Committed payouts: tighten columns */
+  #committed-table thead tr th:nth-child(1) { width: 32px; }
+  #committed-table thead tr th:nth-child(2) { width: 16%; }
+  #committed-table thead tr th:nth-child(3) { width: 12%; }
+  #committed-table thead tr th:nth-child(4),
+  #committed-table thead tr th:nth-child(5),
+  #committed-table thead tr th:nth-child(6) { width: 12%; }
+  #committed-table thead tr th:nth-child(7),
+  #committed-table thead tr th:nth-child(8) { width: 10%; }
+  #committed-table thead tr th:nth-child(9) { width: 14%; }
+  /* Buttons compact in tables */
+  .table-wrap button { padding: 4px 8px; }
+</style>
+<h2>Payouts</h2>
+
+{% if message %}
+  <p style="color:#0a0;">{{ message }}</p>
+{% endif %}
+
+{# (breakdown moved to bottom) #}
+
+<form method="get" action="/payouts" style="gap:12px; align-items:flex-end;">
+  <label>
+    Bucket:
+    <select name="bucket" required style="padding:8px; min-width:160px;">
+      <option value="" {% if not selected_bucket %}selected{% endif %} disabled>Select Bucket</option>
+      {% for bid, bname in buckets %}
+        <option value="{{ bid }}" {% if bid == selected_bucket %}selected{% endif %}>{{ bname }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Date:
+    <input type="date" name="business_date" value="{{ selected_date or '' }}" style="padding:8px; min-width:160px;" />
+  </label>
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input type="checkbox" name="show_all" value="1" {% if selected_show_all %}checked{% endif %} />
+    <span>Show all workers</span>
+  </label>
+  <button type="submit">Apply</button>
+</form>
+
+<script>
+(function(){
+  function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+  ready(function(){
+    const form = document.querySelector('form[action="/payouts"][method="get"]');
+    if (!form) return;
+    const bucketSel = form.querySelector('select[name="bucket"]');
+    const dateInput = form.querySelector('input[name="business_date"]');
+    const showAllChk = form.querySelector('input[name="show_all"]');
+    const LS_BUCKET = 'payouts.bucket';
+    const LS_DATE = 'payouts.date';
+    const LS_SHOW_ALL = 'payouts.show_all';
+
+    function autoSubmit(){
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.submit();
+    }
+
+    function save(){
+      try {
+        if (bucketSel && bucketSel.value) localStorage.setItem(LS_BUCKET, bucketSel.value);
+        if (dateInput && dateInput.value) localStorage.setItem(LS_DATE, dateInput.value);
+        if (showAllChk) localStorage.setItem(LS_SHOW_ALL, showAllChk.checked ? '1' : '0');
+      } catch (_) {}
+    }
+
+    // Prefill from storage and auto-apply once if different
+    try {
+      let changed = false;
+      const savedB = localStorage.getItem(LS_BUCKET);
+      const savedD = localStorage.getItem(LS_DATE);
+      const savedSA = localStorage.getItem(LS_SHOW_ALL);
+      if (bucketSel && savedB && bucketSel.value !== savedB) {
+        // Only set if option exists
+        const opt = Array.from(bucketSel.options || []).find(o => o.value === savedB);
+        if (opt) { bucketSel.value = savedB; changed = true; }
+      }
+      if (dateInput && savedD && dateInput.value !== savedD) {
+        dateInput.value = savedD; changed = true;
+      }
+      if (showAllChk && (savedSA === '1' || savedSA === '0')) {
+        const boolSA = (savedSA === '1');
+        if (showAllChk.checked !== boolSA) { showAllChk.checked = boolSA; changed = true; }
+      }
+      if (changed) autoSubmit();
+    } catch (_) {}
+
+    // Save + auto-apply on change
+    if (bucketSel) bucketSel.addEventListener('change', function(){ save(); autoSubmit(); });
+    if (dateInput) dateInput.addEventListener('change', function(){ save(); autoSubmit(); });
+    if (showAllChk) showAllChk.addEventListener('change', function(){ save(); autoSubmit(); });
+
+    // Persist current on first load
+    save();
+  });
+})();
+</script>
+
+<script>
+// Intercept Preview Distribution to show a popup modal with the computed preview (who gets what by hours)
+(function(){
+  function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+  function $(sel, root){ return (root||document).querySelector(sel); }
+  ready(function(){
+    const form = document.getElementById('payouts-form');
+    if (!form) return;
+    const btn = form.querySelector('button[name="action"][value="preview"]');
+    if (!btn) return;
+    btn.addEventListener('click', async function(e){
+      e.preventDefault();
+      try {
+        const fd = new FormData(form);
+        fd.set('action', 'preview');
+        const resp = await fetch('/payouts', { method: 'POST', body: fd, headers: { 'Accept': 'text/html' } });
+        const html = await resp.text();
+        if (!resp.ok) throw new Error('Preview failed: ' + resp.status);
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const meta = doc.getElementById('preview-meta');
+        const summary = doc.getElementById('preview-summary');
+        const section = doc.getElementById('preview-section');
+        if (!section && !summary && !meta) {
+          alert('No preview available. Ensure a bucket, date, amounts, and assignments are set.');
+          return;
+        }
+        // Use the global modal from base.html
+        const modal = document.getElementById('modal');
+        const box = document.getElementById('modal-box');
+        const title = document.getElementById('modal-title');
+        const msg = document.getElementById('modal-message');
+        if (!modal || !box || !title || !msg) {
+          // Fallback: open a new window with the preview
+          const w = window.open('', '_blank');
+          if (w && w.document) {
+            w.document.write('<!doctype html><title>Payout Preview</title>');
+            w.document.body.appendChild(section);
+          }
+          return;
+        }
+        title.textContent = 'Distribution Preview';
+        // Replace message content with the preview HTML table(s)
+        msg.innerHTML = '';
+        // Clone to avoid removing from parsed doc (include summary if present)
+        const container = document.createElement('div');
+        container.style.display = 'grid';
+        container.style.gap = '12px';
+        if (meta) container.appendChild(meta.cloneNode(true));
+        if (summary) container.appendChild(summary.cloneNode(true));
+        if (section) container.appendChild(section.cloneNode(true));
+        msg.appendChild(container);
+        // Make the modal fullscreen for easier reading
+        box.classList.add('fullscreen');
+        modal.removeAttribute('hidden');
+        // Focus Close button for touch devices
+        const closeBtn = document.getElementById('modal-close');
+        if (closeBtn) closeBtn.focus();
+        // Cleanup on close: remove fullscreen class and clear content
+        function cleanup(){
+          box.classList.remove('fullscreen');
+          msg.innerHTML = '';
+        }
+        if (closeBtn) {
+          const handler = () => { cleanup(); closeBtn.removeEventListener('click', handler); };
+          closeBtn.addEventListener('click', handler);
+        }
+        // Also cleanup if user clicks backdrop to close
+        const backdropHandler = (ev) => {
+          if (ev.target === modal) { cleanup(); modal.removeEventListener('click', backdropHandler); }
+        };
+        modal.addEventListener('click', backdropHandler);
+      } catch (err) {
+        alert((err && err.message) ? err.message : 'Failed to load preview');
+      }
+    });
+  });
+})();
+</script>
+
+{% if assignment_conflicts and assignment_conflicts|length > 0 %}
+  <div class="card" style="border-left:4px solid #c60; background:#fff6f0;">
+    <h3 style="margin:0 0 6px 0; color:#c60;">Assignment Conflicts</h3>
+    <p style="margin:0 0 6px 0; font-size:13px; color:#444;">
+      The following selected workers have no labor shift on {{ selected_date or 'the selected date' }}:
+    </p>
+    <ul style="margin:0 0 6px 18px;">
+      {% for c in assignment_conflicts %}
+        <li><strong>{{ c.worker }}</strong> (selected for: {{ c.destinations | join(', ') }})</li>
+      {% endfor %}
+    </ul>
+    <p style="margin:0; font-size:12px; color:#666;">You can still preview/commit, but please double-check these assignments.</p>
+  </div>
+{% endif %}
+
+{% if selected_bucket and selected_date %}
+<div id="unpaid-summary" class="table-wrap" style="margin-top:12px;">
+  <table>
+    <thead>
+      <tr>
+        <th>Payout Destination</th>
+        <th>Unpaid Total</th>
+        <th>Amount to Distribute</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Bartender</td>
+        <td>{{ '%.2f'|format(unpaid['Bartender'] or 0.0) }}</td>
+        <td>
+          <input type="number" step="0.01" form="payouts-form" name="bartender_amount" value="{{ '%.2f'|format(tip_amounts['Bartender'] or 0.0) }}" style="padding:6px; width:140px;"/>
+        </td>
+      </tr>
+      <tr>
+        <td>Busser</td>
+        <td>{{ '%.2f'|format(unpaid['Busser'] or 0.0) }}</td>
+        <td>
+          <input type="number" step="0.01" form="payouts-form" name="busser_amount" value="{{ '%.2f'|format(tip_amounts['Busser'] or 0.0) }}" style="padding:6px; width:140px;"/>
+        </td>
+      </tr>
+      <tr>
+        <td>Expo</td>
+        <td>{{ '%.2f'|format(unpaid['Expo'] or 0.0) }}</td>
+        <td>
+          <input type="number" step="0.01" form="payouts-form" name="expo_amount" value="{{ '%.2f'|format(tip_amounts['Expo'] or 0.0) }}" style="padding:6px; width:140px;"/>
+        </td>
+      </tr>
+      <tr>
+        <td>Runner</td>
+        <td>{{ '%.2f'|format(unpaid['Runner'] or 0.0) }}</td>
+        <td>
+          <input type="number" step="0.01" form="payouts-form" name="runner_amount" value="{{ '%.2f'|format(tip_amounts['Runner'] or 0.0) }}" style="padding:6px; width:140px;"/>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<form id="payouts-form" method="post" action="/payouts" style="flex-wrap:wrap; gap:16px; margin-top:14px;">
+  <input type="hidden" name="bucket" value="{{ selected_bucket }}"/>
+  <input type="hidden" name="business_date" value="{{ selected_date or '' }}"/>
+  <input type="hidden" name="show_all" value="{{ 1 if selected_show_all else 0 }}"/>
+
+  <div style="display:flex; gap:16px; flex-wrap:wrap; width:100%;">
+    {% for dest in ['Bartender','Busser','Expo','Runner'] %}
+    <div style="min-width:240px;">
+      <label style="font-weight:bold;">{{ dest }} Assignments</label>
+      {% set assigned = assignments.get(dest, []) %}
+      <div class="assign-list big-scroll" style="display:block; width:100%;">
+        {# choose filtered list per destination #}
+        {% set list_workers = workers %}
+        {% if dest == 'Busser' %}
+          {% set list_workers = busser_workers %}
+        {% elif dest == 'Bartender' %}
+          {% set list_workers = bartender_workers %}
+        {% elif dest == 'Expo' %}
+          {% set list_workers = expo_workers %}
+        {% elif dest == 'Runner' %}
+          {% set list_workers = runner_workers %}
+        {% endif %}
+        {% for w in list_workers %}
+        <label class="assign-item">
+          <input type="checkbox" name="assign_{{ dest }}" value="{{ w }}" {% if w in assigned %}checked{% endif %} />
+          <span>{{ w }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <small class="assign-count">{{ assigned|length }} assigned</small>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="width:100%; display:flex; gap:12px; margin-top:8px;">
+    <button type="submit" name="action" value="save_assignments">Save Assignments</button>
+    <button type="submit" name="action" value="preview">Preview Distribution</button>
+    <button type="submit" name="action" value="commit" onclick="return confirm('Commit payouts to database?');" style="background:#0a0; color:#fff; padding:6px 12px;">Commit Payouts</button>
+  </div>
+</form>
+{% else %}
+  <p style="margin-top:12px; color:#666;">Select a bucket and date, then click Apply to view unpaid totals and manage assignments.</p>
+{% endif %}
+
+{% if result and result.distributions %}
+  <h3 style="margin-top:16px;">Distribution Preview</h3>
+
+  {# Meta summary for preview #}
+  {% set ns = namespace(label='') %}
+  {% for bid, bname in buckets %}{% if bid == selected_bucket %}{% set ns.label = bname %}{% endif %}{% endfor %}
+  {% set total_distribute = (result.tip_amounts.get('Bartender',0.0) + result.tip_amounts.get('Busser',0.0) + result.tip_amounts.get('Expo',0.0) + result.tip_amounts.get('Runner',0.0)) %}
+  <div id="preview-meta" class="preview-meta">
+    <span class="pill">Bucket: {{ ns.label or selected_bucket }}</span>
+    <span class="pill">Date: {{ selected_date or '' }}</span>
+    <span class="kpi"><span class="label">Total Distribute:</span> ${{ '%.2f'|format(total_distribute) }}</span>
+  </div>
+
+  {# Destination-level summary of hours and hourly rates #}
+  <div id="preview-summary" class="table-wrap" style="margin-bottom:10px;">
+    <table>
+      <colgroup>
+        <col style="width:24%" />
+        <col style="width:16%" />
+        <col style="width:14%" />
+        <col style="width:22%" />
+        <col style="width:24%" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Destination</th>
+          <th>Assigned</th>
+          <th class="num-right">Total Hours</th>
+          <th class="num-right"><abbr title="Amount to Distribute">Amount</abbr></th>
+          <th class="num-right"><abbr title="Hourly Rate">Rate</abbr></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dest in ['Bartender','Busser','Expo','Runner'] %}
+        {% set assigned = assignments.get(dest, []) %}
+        <tr>
+          <td>{{ dest }}</td>
+          <td>{{ assigned|length }}</td>
+          <td class="num-right">{{ '%.2f'|format((result.destination_hours.get(dest, 0.0) if result.destination_hours else 0.0)) }}</td>
+          <td class="num-right">{{ '%.2f'|format((result.tip_amounts.get(dest, 0.0) if result.tip_amounts else 0.0)) }}</td>
+          <td class="num-right">{{ '%.2f'|format((result.hourly_rate.get(dest, 0.0) if result.hourly_rate else 0.0)) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div id="preview-section" class="table-wrap">
+    <table>
+      <colgroup>
+        <col style="width:30%" />
+        <col style="width:18%" />
+        <col style="width:14%" />
+        <col style="width:14%" />
+        <col style="width:24%" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Worker</th>
+          <th>Destination</th>
+          <th class="num-right">Hours</th>
+          <th class="num-right">Rate</th>
+          <th class="num-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set grand_total = 0.0 %}
+        {% for worker, dest_map in result.distributions.items() %}
+          {% set worker_hours = (result.hours_by_worker.get(worker, 0.0) if result.hours_by_worker else 0.0) %}
+          {% for dest, amt in dest_map.items() %}
+          <tr>
+            <td>{{ worker }}</td>
+            <td>{{ dest }}</td>
+            <td class="num-right">{{ '%.2f'|format(worker_hours) }}</td>
+            <td class="num-right">{{ '%.2f'|format((result.hourly_rate.get(dest, 0.0) if result.hourly_rate else 0.0)) }}</td>
+            <td class="num-right">{{ '%.2f'|format(amt) }}</td>
+          </tr>
+          {% set grand_total = grand_total + amt %}
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="4" class="num-right" style="text-align:right;">Total</th>
+          <th class="num-right">{{ '%.2f'|format(grand_total) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+{% endif %}
+
+{# Bottom: Unpaid pushed breakdown by server #}
+{% if selected_bucket and selected_date and server_breakdown and server_breakdown|length > 0 %}
+  <h3 style="margin-top:16px;">Unpaid Pushed Breakdown by Server ({{ selected_date }}, {{ selected_bucket }})</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Server</th>
+          <th>Destination</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set total_sum = 0.0 %}
+        {% for row in server_breakdown %}
+          <tr>
+            <td>{{ row.worker_name }}</td>
+            <td>{{ row.destination }}</td>
+            <td>{{ '%.2f'|format(row.amount or 0.0) }}</td>
+          </tr>
+          {% set total_sum = total_sum + (row.amount or 0.0) %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="2" style="text-align:right;">Total</th>
+          <th>{{ '%.2f'|format(total_sum) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+{% endif %}
+
+{% if selected_bucket and selected_date and committed_log and committed_log|length > 0 %}
+  <h3 style="margin-top:16px;">Committed Payouts ({{ selected_date }}, {{ selected_bucket }})
+    <span class="pill" style="margin-left:8px; background:#eef; color:#225;">v3</span>
+  </h3>
+  <div class="table-wrap">
+    <table id="committed-table">
+      <thead>
+        <tr>
+          <th style="width:32px;">
+            <input type="checkbox" id="chk-commit-all" title="Select all" />
+          </th>
+          <th data-sort="timestamp" style="cursor:pointer;">Timestamp</th>
+          <th data-sort="session" style="cursor:pointer;">Session</th>
+          <th data-sort="server" style="cursor:pointer;">Employee</th>
+          <th data-sort="submitter" style="cursor:pointer;">From (Submitter)</th>
+          <th data-sort="destination" style="cursor:pointer;">Destination</th>
+          <th data-sort="amount_received" style="cursor:pointer;">Amount Received</th>
+          <th data-sort="amount_given" style="cursor:pointer;">Amount Given</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(total_received=0.0, total_given=0.0) %}
+        {% for row in committed_log %}
+          {% set recv = (row.amount_received | float) %}
+          {% if recv <= 0 %}
+            {% set recv = (row.transfer_amount | default(row.amount, 0.0) | float) %}
+          {% endif %}
+          {% set give = (row.amount_given | float) %}
+          {% if give <= 0 %}
+            {% set give = (row.transfer_amount | default(row.amount, 0.0) | float) %}
+          {% endif %}
+          <tr>
+            <td>
+              <input type="checkbox" class="chk-commit" name="payout_ids" value="{{ row.id }}" form="bulk-delete-form" />
+            </td>
+            <td data-col="timestamp">{{ row.timestamp }}</td>
+            <td data-col="session"><span class="pill">{{ row.payout_session_id }}</span></td>
+            <td data-col="server">{{ row.worker_name }}</td>
+            <td data-col="submitter">{{ row.submitter_name or '' }}</td>
+            <td data-col="destination">{{ row.destination }}</td>
+            <td data-col="amount_received">{{ '%.2f'|format(recv) }}</td>
+            <td data-col="amount_given">{{ '%.2f'|format(give) }}</td>
+            <td>
+              <form method="post" action="/payouts" onsubmit="return confirm('Delete this committed payout? This will also remove matching cashbox entries.');">
+                <input type="hidden" name="bucket" value="{{ selected_bucket }}" />
+                <input type="hidden" name="business_date" value="{{ selected_date or '' }}" />
+                <input type="hidden" name="show_all" value="{{ 1 if selected_show_all else 0 }}" />
+                <input type="hidden" name="payout_id" value="{{ row.id }}" />
+                <button type="submit" name="action" value="delete_committed" style="background:#b71c1c; color:#fff; padding:6px 10px;">Delete</button>
+              </form>
+              {% if loop.index0 < 3 %}
+                <div style="color:#666; font-size:12px; margin-top:2px;">[raw: recv={{ row.amount_received }}, give={{ row.amount_given }}, xfer={{ row.transfer_amount }}, amt={{ row.amount }}]</div>
+              {% endif %}
+            </td>
+          </tr>
+          {% set ns.total_received = ns.total_received + (recv or 0.0) %}
+          {% set ns.total_given = ns.total_given + (give or 0.0) %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="7" style="text-align:right;">Totals</th>
+          <th>{{ '%.2f'|format(ns.total_received) }}</th>
+          <th>{{ '%.2f'|format(ns.total_given) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <form id="bulk-delete-form" method="post" action="/payouts" onsubmit="return confirm('Delete selected committed payouts? This will also remove matching cashbox entries.');" style="margin-top:8px;">
+    <input type="hidden" name="bucket" value="{{ selected_bucket }}" />
+    <input type="hidden" name="business_date" value="{{ selected_date or '' }}" />
+    <input type="hidden" name="show_all" value="{{ 1 if selected_show_all else 0 }}" />
+    {# checkboxes above contribute as payout_ids via form attribute #}
+    <button type="submit" name="action" value="delete_committed_bulk" style="background:#b71c1c; color:#fff; padding:6px 12px;">Delete Selected</button>
+  </form>
+{% endif %}
+
+<script>
+  // Update 'X assigned' counts live for each assignment list
+  (function() {
+    // Sorting for Committed Payouts table
+    function initCommittedSorting() {
+      const table = document.getElementById('committed-table');
+      if (!table) return;
+      const tbody = table.querySelector('tbody');
+      let sortState = { key: null, dir: 1 };
+      function getCellValue(tr, key){
+        const td = tr.querySelector(`[data-col="${key}"]`);
+        return td ? td.textContent.trim() : '';
+      }
+      function comparator(key, dir){
+        return function(a, b){
+          let va = getCellValue(a, key);
+          let vb = getCellValue(b, key);
+          if (key === 'amount') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+          else if (key === 'timestamp') { va = Date.parse(va) || 0; vb = Date.parse(vb) || 0; }
+          else { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+          if (va < vb) return -1 * dir;
+          if (va > vb) return 1 * dir;
+          return 0;
+        };
+      }
+      table.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.getAttribute('data-sort');
+          if (sortState.key === key) sortState.dir *= -1; else { sortState.key = key; sortState.dir = 1; }
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.sort(comparator(key, sortState.dir));
+          rows.forEach(r => tbody.appendChild(r));
+        });
+      });
+    }
+    // Select all checkbox handling for committed table
+    function initCommittedSelectAll(){
+      const master = document.getElementById('chk-commit-all');
+      if (!master) return;
+      const table = document.getElementById('committed-table');
+      const getChecks = () => Array.from(table.querySelectorAll('.chk-commit'));
+      master.addEventListener('change', () => {
+        getChecks().forEach(cb => { cb.checked = master.checked; });
+      });
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { initCommittedSorting(); initCommittedSelectAll(); });
+    } else {
+      initCommittedSorting();
+      initCommittedSelectAll();
+    }
+    function updateCount(listEl) {
+      const countEl = listEl.parentElement.querySelector('.assign-count');
+      if (!countEl) return;
+      const checked = listEl.querySelectorAll('input[type="checkbox"]:checked').length;
+      countEl.textContent = `${checked} assigned`;
+    }
+    function initList(listEl) {
+      updateCount(listEl);
+      const handler = function(e) {
+        if (e.target && e.target.matches('input[type="checkbox"]')) {
+          updateCount(listEl);
+        }
+      };
+      listEl.addEventListener('change', handler);
+      listEl.addEventListener('click', handler); // improve touch responsiveness
+    }
+    function initAll() {
+      document.querySelectorAll('.assign-list').forEach(initList);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initAll);
+    } else {
+      initAll();
+    }
+  })();
+</script>
+
+{% endblock %}

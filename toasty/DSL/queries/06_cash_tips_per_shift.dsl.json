@@ -1,0 +1,54 @@
+{
+  "_description": "Replicate cash_tips_per_shift.csv - Cash tips declared per employee shift",
+  "_csv_source": "cash_tips_per_shift.csv",
+  "_csv_columns": "date,employee_guid,employee_name,job_title,start_time_utc,end_time_utc,declared_cash_tips",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_timeEntries_20260130.json",
+      "alias": "te"
+    },
+    "joins": [
+      {
+        "source": {
+          "source_file": "labor_v1_employees.json",
+          "alias": "emp"
+        },
+        "on": {
+          "left": "te.employeeReference.guid",
+          "right": "emp.guid"
+        },
+        "join_type": "left",
+        "skip_nulls": true
+      },
+      {
+        "source": {
+          "source_file": "labor_v1_jobs.json",
+          "alias": "job"
+        },
+        "on": {
+          "left": "te.jobReference.guid",
+          "right": "job.guid"
+        },
+        "join_type": "left",
+        "skip_nulls": true
+      }
+    ],
+    "where": [
+      {"field": "te.declaredCashTips", "op": "is_not_null"}
+    ],
+    "select": [
+      {"expr": "te.businessDate", "alias": "date"},
+      {"expr": "te.employeeReference.guid", "alias": "employee_guid"},
+      {"expr": "emp.firstName", "alias": "employee_first_name"},
+      {"expr": "emp.lastName", "alias": "employee_last_name"},
+      {"expr": "job.title", "alias": "job_title"},
+      {"expr": "te.inDate", "alias": "start_time_utc"},
+      {"expr": "te.outDate", "alias": "end_time_utc"},
+      {"expr": "te.declaredCashTips", "alias": "declared_cash_tips"}
+    ],
+    "order_by": [
+      {"field": "te.businessDate", "direction": "desc"},
+      {"field": "te.inDate", "direction": "asc"}
+    ]
+  }
+}

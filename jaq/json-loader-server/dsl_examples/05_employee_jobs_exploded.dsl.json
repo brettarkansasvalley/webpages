@@ -1,0 +1,39 @@
+{
+  "_description": "Explode employee job references with context preservation",
+  "_csv_source": "Derived from employees.csv job references",
+  "_feature": "explode_with_context",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_employees.json",
+      "alias": "emp",
+      "explode_with_context": {
+        "path": "jobReferences",
+        "alias": "job_ref",
+        "preserve": ["emp.guid", "emp.firstName", "emp.lastName", "emp.email"]
+      }
+    },
+    "joins": [
+      {
+        "source": {
+          "source_file": "labor_v1_jobs.json",
+          "alias": "job"
+        },
+        "on": {
+          "left": "job_ref.guid",
+          "right": "job.guid"
+        },
+        "join_type": "left",
+        "skip_nulls": true
+      }
+    ],
+    "select": [
+      {"expr": "emp.guid", "alias": "employee_guid"},
+      {"expr": "emp.firstName", "alias": "first_name"},
+      {"expr": "emp.lastName", "alias": "last_name"},
+      {"expr": "emp.email", "alias": "email"},
+      {"expr": "job_ref.guid", "alias": "job_guid"},
+      {"expr": "job.title", "alias": "job_title"},
+      {"expr": "job.tipped", "alias": "job_is_tipped"}
+    ]
+  }
+}

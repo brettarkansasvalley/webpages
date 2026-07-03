@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Worker Report</h2>
+{% if message %}
+  <p style="color: #b00;">{{ message }}</p>
+{% endif %}
+
+<form method="get" action="/report" style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+  <label for="start_date">Start:</label>
+  <input id="start_date" type="date" name="start_date" value="{{ start_date }}">
+  <label for="end_date">End:</label>
+  <input id="end_date" type="date" name="end_date" value="{{ end_date }}">
+  <label for="limit">Rows:</label>
+  <input id="limit" type="number" name="limit" value="{{ rows|length }}" min="10" max="10000" step="10">
+  <button type="submit">Apply</button>
+  <a href="/reports/worker_report.csv?start_date={{ start_date }}&end_date={{ end_date }}&limit={{ rows|length }}" class="btn-link">Export CSV</a>
+  <input id="tableFilter" type="text" placeholder="Filter table..." style="margin-left: 1rem; width: 300px;"/>
+  <span style="opacity: 0.7;">Showing {{ rows|length }} rows</span>
+  
+</form>
+<div class="table-wrap">
+  {% set exclude = ['Payout Bucket', 'Payout Business Date'] %}
+  <table class="sortable filterable">
+    <thead>
+      <tr>
+        {% for h in headers %}
+        {% if h not in exclude %}
+        <th>{{ h }}</th>
+        {% endif %}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr>
+          {% for h in headers %}
+            {% if h not in exclude %}
+            <td>{{ r[h] }}</td>
+            {% endif %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

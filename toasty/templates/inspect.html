@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Inspect GUID: {{ guid }}</h2>
+  <p>Files scanned: {{ files_scanned }} · Matches: {{ matches_count }}</p>
+  {% if matches %}
+    <div class="table-wrap">
+      <table class="sortable filterable">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Path</th>
+            <th>Object</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in matches %}
+            <tr>
+              <td>{{ m.file }}</td>
+              <td><code>{{ m.path }}</code></td>
+              <td>
+                <pre style="white-space: pre-wrap; margin: 0;">{{ m.json_str }}</pre>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p><em>No matching objects found.</em></p>
+  {% endif %}
+{% endblock %}

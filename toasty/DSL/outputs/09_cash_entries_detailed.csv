@@ -1,0 +1,4 @@
+entry_guid,entry_date,type,reason,amount,employee_guid,employee_first_name,employee_last_name,approver_guid
+9573315a-9b77-4355-8d2d-cceb409647cd,2026-01-30T21:16:29.974+0000,TIP_OUT,Tips paid out from shift review.,-101.5,6616e563-7186-4501-93e5-6e2f3e976022,Mary,Widaman,46493198-3a8b-4168-a76e-4778a43308aa
+dc896d4b-aa46-407c-9159-68f89bb39a08,2026-01-30T21:23:34.954+0000,TIP_OUT,Tips paid out from shift review.,-42.0,88f963d0-1cc5-4243-943f-9f451d8ec715,AM,Bar,383c5a3d-c6d0-40c7-bb5b-2f1475c0a9a1
+694381da-ecfd-4471-afbf-8fa19cd789bc,2026-01-30T21:20:38.700+0000,TIP_OUT,Tips paid out from shift review.,-97.61,5eb74ca0-b2f4-4186-92d7-fbf89d389ee1,Carla,Lupardis,e5c442e6-2ff3-4668-90db-1cbe68469cee

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Reconcile Orders — {{ server }} on {{ biz_date }}</h2>
+  <p>
+    CSV rows for server: <strong>{{ csv_count }}</strong> · JSON orders for server: <strong>{{ json_count }}</strong>
+  </p>
+
+  <h3>Matched Orders</h3>
+  {% if matched_details %}
+    <div class="table-wrap">
+      <table class="sortable filterable">
+        <thead>
+          <tr>
+            <th>Order #</th>
+            <th>Order GUID</th>
+            <th>Checks</th>
+            <th>JSON Total</th>
+            <th>JSON Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in matched_details %}
+            <tr>
+              <td>{{ m.display }}</td>
+              <td>{% if m.order_guid %}<a href="/inspect/{{ m.order_guid }}">{{ m.order_guid }}</a>{% endif %}</td>
+              <td>{{ m.checks_count }}</td>
+              <td>{{ m.json_total }}</td>
+              <td>{{ m.json_net }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p><em>No matched orders.</em></p>
+  {% endif %}
+
+  <h3>Missing in JSON (present in CSV, not found in JSON)</h3>
+  {% if missing_in_json %}
+    <p>{{ missing_in_json|length }} orders</p>
+    <div class="table-wrap">
+      <table class="sortable filterable">
+        <thead><tr><th>Order #</th></tr></thead>
+        <tbody>
+          {% for o in missing_in_json %}
+            <tr><td>{{ o }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p><em>None</em></p>
+  {% endif %}
+
+  <h3>Extra in JSON (present in JSON, not in CSV)</h3>
+  {% if extra_in_json %}
+    <p>{{ extra_in_json|length }} orders</p>
+    <div class="table-wrap">
+      <table class="sortable filterable">
+        <thead><tr><th>Order #</th></tr></thead>
+        <tbody>
+          {% for o in extra_in_json %}
+            <tr><td>{{ o }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p><em>None</em></p>
+  {% endif %}
+{% endblock %}

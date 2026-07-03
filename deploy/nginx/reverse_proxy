@@ -1,0 +1,240 @@
+server {
+    server_name zucklakeapp.duckdns.org;
+
+    # Basic Auth settings
+    auth_basic "Restricted Access";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    # =====================
+    # Klaviyo Campaign Viewer (Flask/gunicorn on 127.0.0.1:8100)
+    # Password-protected with its OWN credentials file (admin / ...),
+    # independent of the shared .htpasswd used by the other apps.
+    # =====================
+    location = /campaigns { return 301 /campaigns/; }
+
+    location /campaigns/ {
+        auth_basic           "Campaign Viewer";
+        auth_basic_user_file /etc/nginx/.htpasswd-campaigns;
+
+        client_max_body_size 2m;          # email HTML + comments can be large
+
+        proxy_pass         http://127.0.0.1:8100/;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Forwarded-Prefix /campaigns;
+        proxy_read_timeout 300s;           # Klaviyo render / QC starts can be slow
+    }
+
+    # Shoelace SQLite HTML file (static file) - no auth
+    location /shoelace_sqlite_v2.html {
+        alias /home/ubuntu/Music/fb/fb/shoelace_sqlite_v2.html;
+        auth_basic off;
+    }
+
+    # Notes loading test page - no auth
+    location /test_notes_loading.html {
+        alias /home/ubuntu/Music/fb/fb/test_notes_loading.html;
+        auth_basic off;
+    }
+
+    # =====================
+    # JAQ JSON Loader Server (Port 3000)
+    # =====================
+    location /jaq/ {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /jaq;
+        
+        # Rewrite the API_BASE in the HTML response
+        sub_filter_types *;
+        sub_filter "const API_BASE = window.location.origin;" "const API_BASE = window.location.origin + '/jaq/';";
+        sub_filter_once on;
+    }
+
+    # =====================
+    # JAQ2 JSON Loader Server - Second Instance (Port 3001)
+    # =====================
+    location /jaq2/ {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:3001/;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /jaq2;
+        
+        # Rewrite the API_BASE in the HTML response
+        sub_filter_types *;
+        sub_filter "const API_BASE = window.location.origin;" "const API_BASE = window.location.origin + '/jaq2/';";
+        sub_filter_once on;
+    }
+
+    # =====================
+    # DadaBik App (Port 4100)
+    # =====================
+    location /dadabik/ {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:4100/;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /dadabik;
+    }
+
+    # =====================
+    # Toasty Webapp (Port 5000)
+    # =====================
+    location /webapp/app.js {
+        alias /home/ubuntu/new_toasty/toasty/webapp/app.js;
+        add_header Content-Type application/javascript;
+    }
+    
+    location /webapp/ {
+        proxy_pass http://127.0.0.1:5000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /webapp;
+    }
+
+    # =====================
+    # Toasty Main App - FastAPI (Port 8001)
+    # =====================
+    location /toasty/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /toasty;
+    }
+
+    # =====================
+    # Costing App - Vite frontend (Port 5174) + FastAPI backend (Port 8000)
+    # =====================
+    location /costing/ {
+        proxy_pass http://127.0.0.1:5174/costing/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /costing;
+    }
+
+    location /costing/api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /costing/uploads/ {
+        proxy_pass http://127.0.0.1:8000/uploads/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Form Builder UI as root (port 8092)
+    location / {
+        proxy_pass http://127.0.0.1:8092/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Realtime Dashboard (port 3000)
+    location /dashboard {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # API v1 endpoints 
+    location /api/v1/ {
+        proxy_pass http://127.0.0.1:8092/api/v1/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # REST API endpoints (port 8080)
+    location ~ ^/(tables|query|search|json|schema|stats|info|health|history|csv)$ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Notes API endpoints (Go server on port 8093)
+    location /notes/ {
+        proxy_pass http://127.0.0.1:8093/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # GraphQL API (port 8080)
+    location /graphql {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket (port 8080)
+    location /ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/zucklakeapp.duckdns.org/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/zucklakeapp.duckdns.org/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+server {
+    if ($host = zucklakeapp.duckdns.org) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+    listen 80;
+    server_name zucklakeapp.duckdns.org;
+    return 404; # managed by Certbot
+
+}

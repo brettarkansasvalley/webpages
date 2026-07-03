@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Suggest</h2>
+<form id="suggest-form" method="get" action="/suggest" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+  <label>
+    Date:
+    <input type="date" name="date" value="{{ selected_date or '' }}" style="padding:8px; min-width:160px;" />
+  </label>
+  <button type="submit" style="padding:8px 12px;">Apply</button>
+</form>
+
+{# Suggestions block moved below main table #}
+
+<div class="table-wrap" style="margin-top:12px;">
+  <table id="suggest-table">
+    <thead>
+      <tr>
+        <th data-sort="worker" style="cursor:pointer; width:1%; white-space:nowrap;">
+          Worker
+          <button type="button" id="toggle-worker-col" title="Collapse/Expand Worker column" style="margin-left:6px; font-size:12px; padding:2px 6px;">Toggle</button>
+        </th>
+        <th data-sort="shift_unpushed" style="cursor:pointer;">Shift Locations Without Activity</th>
+        <th data-sort="titles" style="cursor:pointer;">Job Titles</th>
+        <th data-sort="shift_active" style="cursor:pointer;">Shift Locations With Activity</th>
+        <th data-sort="pushed" style="cursor:pointer;">Pushed Given (Unpaid)</th>
+        <th data-sort="committed" style="cursor:pointer;">Committed Given</th>
+        <th data-sort="received" style="cursor:pointer;">Received (Committed)</th>
+        <th data-sort="loc_active" style="cursor:pointer;">Locations With Activity</th>
+        <th data-sort="loc_inactive" style="cursor:pointer;">Locations Without Activity</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td data-col="worker" style="white-space:nowrap; width:1%;"><a href="/server-tips?worker={{ r.worker|urlencode }}&date={{ selected_date|urlencode }}">{{ r.worker }}</a></td>
+        <td data-col="shift_unpushed" data-count="{{ r.shift_unpushed_buckets|length }}">
+          {% if r.shift_unpushed_buckets and r.shift_unpushed_buckets|length > 0 %}
+            <ul style="margin:0; padding-left:18px;">
+              {% for b in r.shift_unpushed_buckets %}
+                <li><a href="/server-tips?worker={{ r.worker|urlencode }}&date={{ selected_date|urlencode }}&bucket={{ b.id|urlencode }}">{{ b.name }}</a></li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td data-col="titles">
+          {% if r.titles and r.titles|length > 0 %}
+            <ul style="margin:0; padding-left:18px;">
+              {% for t in r.titles %}
+              <li>{{ t }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td data-col="shift_active" data-count="{{ r.shift_active_buckets|length }}">
+          {% if r.shift_active_buckets and r.shift_active_buckets|length > 0 %}
+            <ul style="margin:0; padding-left:18px;">
+              {% for b in r.shift_active_buckets %}
+                <li>
+                  <a href="/server-tips?worker={{ r.worker|urlencode }}&date={{ selected_date|urlencode }}&bucket={{ b.id|urlencode }}">{{ b.name }}</a>
+                  <span style="color:#666; font-size:12px;">(pushed {{ '%.2f'|format(b.pushed or 0.0) }}, committed {{ '%.2f'|format(b.committed or 0.0) }})</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td data-col="pushed">{{ '%.2f'|format(r.pushed_given or 0.0) }}</td>
+        <td data-col="committed">{{ '%.2f'|format(r.committed_given or 0.0) }}</td>
+        <td data-col="received">{{ '%.2f'|format(r.received or 0.0) }}</td>
+        <td data-col="loc_active" data-count="{{ r.active_buckets|length }}">
+          {% if r.active_buckets and r.active_buckets|length > 0 %}
+            <ul style="margin:0; padding-left:18px;">
+              {% for b in r.active_buckets %}
+                <li>
+                  <a href="/server-tips?worker={{ r.worker|urlencode }}&date={{ selected_date|urlencode }}&bucket={{ b.id|urlencode }}">{{ b.name }}</a>
+                  <span style="color:#666; font-size:12px;">(pushed {{ '%.2f'|format(b.pushed or 0.0) }}, committed {{ '%.2f'|format(b.committed or 0.0) }})</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td data-col="loc_inactive" data-count="{{ r.inactive_buckets|length }}">
+          {% if r.inactive_buckets and r.inactive_buckets|length > 0 %}
+            <ul style="margin:0; padding-left:18px;">
+              {% for b in r.inactive_buckets %}
+                <li><a href="/server-tips?worker={{ r.worker|urlencode }}&date={{ selected_date|urlencode }}&bucket={{ b.id|urlencode }}">{{ b.name }}</a></li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if suggestions and suggestions|length > 0 %}
+<div class="card" style="margin-top:12px;">
+  <h3 style="margin:0 0 6px 0;">Suggestions</h3>
+  <p style="margin:0 0 6px 0; color:#555;">The following employees reported cash/credit tips on {{ selected_date }}, but have not pushed or committed any tips:</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Worker</th>
+          <th>Reason</th>
+          <th>Cash Tips</th>
+          <th>Credit Card Tips</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suggestions %}
+        <tr>
+          <td><a href="/server-tips?worker={{ s.worker|urlencode }}&date={{ selected_date|urlencode }}">{{ s.worker }}</a></td>
+          <td>{{ s.reason or '' }}</td>
+          <td>{{ '%.2f'|format(s.cash_tips or 0.0) }}</td>
+          <td>{{ '%.2f'|format(s.credit_card_tips or 0.0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+<style>
+  /* Collapsible worker column: truncate with ellipsis when collapsed */
+  #suggest-table.collapsed-worker td[data-col="worker"] a {
+    display: inline-block;
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+<script>
+(function(){
+  function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+  ready(function(){
+    // Persist selected date
+    const form = document.getElementById('suggest-form');
+    const dateInput = form ? form.querySelector('input[name="date"]') : null;
+    const LS_DATE = 'suggest.date';
+    function save(){ try { if (dateInput && dateInput.value) localStorage.setItem(LS_DATE, dateInput.value); } catch(_){} }
+    function prefill(){
+      try {
+        const saved = localStorage.getItem(LS_DATE);
+        if (dateInput && saved && dateInput.value !== saved){
+          dateInput.value = saved;
+          // Auto-apply once on revisit
+          if (typeof form.requestSubmit === 'function') form.requestSubmit(); else form.submit();
+        }
+      } catch(_){}
+    }
+    if (dateInput) {
+      prefill();
+      dateInput.addEventListener('change', save);
+    }
+
+    const table = document.getElementById('suggest-table');
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    const LS_SORT_KEY = 'suggest.sort.key';
+    const LS_SORT_DIR = 'suggest.sort.dir';
+    const LS_WORKER_COLLAPSE = 'suggest.worker.collapse';
+    let sortState = { key: null, dir: 1 };
+    function getCellValue(tr, key){
+      const td = tr.querySelector(`[data-col="${key}"]`);
+      if (!td) return '';
+      const countKeys = ['shift_unpushed','shift_active','loc_active','loc_inactive'];
+      if (countKeys.includes(key)) {
+        const c = td.getAttribute('data-count');
+        return c ? parseInt(c, 10) : 0;
+      }
+      return td.textContent.trim();
+    }
+    function comparator(key, dir){
+      return function(a, b){
+        let va = getCellValue(a, key);
+        let vb = getCellValue(b, key);
+        const numericKeys = ['pushed','committed','received','shift_unpushed','shift_active','loc_active','loc_inactive'];
+        if (numericKeys.includes(key)) {
+          va = parseFloat(va) || 0; vb = parseFloat(vb) || 0;
+        } else {
+          va = va.toLowerCase(); vb = vb.toLowerCase();
+        }
+        if (va < vb) return -1 * dir;
+        if (va > vb) return 1 * dir;
+        return 0;
+      };
+    }
+    function applySort(key, dir){
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort(comparator(key, dir));
+      rows.forEach(r => tbody.appendChild(r));
+      // Persist
+      try { localStorage.setItem(LS_SORT_KEY, key); localStorage.setItem(LS_SORT_DIR, String(dir)); } catch(_){}
+    }
+
+    table.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.getAttribute('data-sort');
+        if (sortState.key === key) sortState.dir *= -1; else { sortState.key = key; sortState.dir = 1; }
+        applySort(key, sortState.dir);
+      });
+    });
+
+    // Worker column collapse/expand toggle
+    const toggleBtn = document.getElementById('toggle-worker-col');
+    function applyWorkerCollapse(collapsed){
+      if (!table) return;
+      if (collapsed) table.classList.add('collapsed-worker'); else table.classList.remove('collapsed-worker');
+      try { localStorage.setItem(LS_WORKER_COLLAPSE, collapsed ? '1' : '0'); } catch(_){ }
+    }
+    if (toggleBtn){
+      toggleBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const isCollapsed = table.classList.contains('collapsed-worker');
+        applyWorkerCollapse(!isCollapsed);
+      });
+    }
+
+    // Apply saved sort on load if present; otherwise default to shift_unpushed DESC
+    try {
+      const savedKey = localStorage.getItem(LS_SORT_KEY);
+      const savedDir = parseInt(localStorage.getItem(LS_SORT_DIR) || '0', 10);
+      if (savedKey && (savedDir === 1 || savedDir === -1)) {
+        sortState.key = savedKey; sortState.dir = savedDir;
+        applySort(savedKey, savedDir);
+      } else {
+        // Default: show workers with shift locations without activity at the top
+        sortState.key = 'shift_unpushed';
+        sortState.dir = -1; // descending by count
+        applySort('shift_unpushed', -1);
+      }
+      // Apply worker column collapse from storage; default collapsed
+      const savedCollapse = localStorage.getItem(LS_WORKER_COLLAPSE);
+      const collapsed = savedCollapse === null ? true : (savedCollapse === '1');
+      applyWorkerCollapse(collapsed);
+    } catch(_){ }
+
+    });
+  })();
+</script>
+{% endblock %}

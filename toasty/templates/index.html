@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block content %}
+  <section>
+    <form id="fetch-form" method="post" action="/run" class="fetch-form" style="display:flex; gap:8px; align-items:flex-end;">
+      <label>Days to fetch:
+        <input type="number" name="days" value="7" min="1" max="60" />
+      </label>
+      <button type="submit" id="fetch-btn">Fetch</button>
+      <button type="button" id="cancel-btn" title="Cancel current fetch">Cancel</button>
+      <button type="button" id="force-btn" title="Force clear lock (use if cancel didn't finish)">Force Clear</button>
+      <a href="/reports" style="margin-left:8px;">View reports</a>
+      <a href="/employees" style="margin-left:8px;">Employees</a>
+    </form>
+
+    <div style="margin-top:12px;">
+      <div id="status-wrap" style="border:1px solid #ccc; background:#fafafa; padding:8px; max-height:260px; overflow:auto;">
+        <pre id="status" style="margin:0; white-space:pre-wrap;">No fetch running. Submit a fetch to see progress.</pre>
+      </div>
+    </div>
+  </section>
+  <script>
+  (function(){
+    const form = document.getElementById('fetch-form');
+    const statusEl = document.getElementById('status');
+    const btn = document.getElementById('fetch-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const forceBtn = document.getElementById('force-btn');
+    let timer = null;
+    async function poll(){
+      try {
+        const res = await fetch('/run/status', { cache: 'no-store' });
+        const txt = await res.text();
+        statusEl.textContent = txt || 'No status available';
+        const wrap = document.getElementById('status-wrap');
+        if (wrap) wrap.scrollTop = wrap.scrollHeight;
+      } catch (e) {
+        statusEl.textContent = 'Unable to read status.';
+      }
+    }
+    function start(){
+      if (timer) clearInterval(timer);
+      timer = setInterval(poll, 2000);
+      poll();
+    }
+    // start polling on load to show last log if exists
+    start();
+    form.addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      try {
+        btn.disabled = true; btn.textContent = 'Starting...';
+        const fd = new FormData(form);
+        const res = await fetch('/run', { method:'POST', body: fd });
+        const msg = await res.text();
+        statusEl.textContent = msg + '\n' + (statusEl.textContent || '');
+        btn.textContent = 'Fetching...';
+        start();
+      } catch (e) {
+        statusEl.textContent = 'Failed to start fetch.';
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = 'Fetch'; }, 1500);
+      }
+    });
+
+    forceBtn.addEventListener('click', async function(){
+      try {
+        forceBtn.disabled = true; forceBtn.textContent = 'Clearing...';
+        const res = await fetch('/run/force-clear', { method:'POST' });
+        const txt = await res.text();
+        statusEl.textContent = (statusEl.textContent || '') + '\n' + txt + ' (reload if needed)';
+        start();
+      } catch (e) {
+        statusEl.textContent = (statusEl.textContent || '') + '\nUnable to force-clear.';
+      } finally {
+        setTimeout(() => { forceBtn.disabled = false; forceBtn.textContent = 'Force Clear'; }, 1000);
+      }
+    });
+
+    cancelBtn.addEventListener('click', async function(){
+      try {
+        cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...';
+        const res = await fetch('/run/cancel', { method:'POST' });
+        const txt = await res.text();
+        statusEl.textContent = (statusEl.textContent || '') + '\n' + txt;
+        start();
+      } catch (e) {
+        statusEl.textContent = (statusEl.textContent || '') + '\nUnable to request cancel.';
+      } finally {
+        setTimeout(() => { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }, 1000);
+      }
+    });
+  })();
+  </script>
+{% endblock %}

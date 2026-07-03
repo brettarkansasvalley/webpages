@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Reports</h2>
+  {% if status_messages %}
+    <div class="status-messages">
+      <ul>
+        {% for msg in status_messages %}
+          <li>{{ msg }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  <input id="tableFilter" class="filter-input" placeholder="Filter..." oninput="filterTable()" />
+  <div class="table-wrap">
+    <table class="sortable filterable" id="reportsTable">
+      <thead>
+        <tr>
+          <th data-key="name">File</th>
+          <th data-key="modified">Last Modified</th>
+          <th data-key="actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+          <tr>
+            <td>{{ r.name }}</td>
+            <td>{{ r.modified or "unknown" }}</td>
+            <td>
+              <a href="/reports/{{ r.name }}">view</a>
+              {% if r.can_rebuild %}
+                |
+                <form method="post" action="/reports/{{ r.name }}/rebuild" style="display:inline;">
+                  <button type="submit" class="link-button">Rebuild</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

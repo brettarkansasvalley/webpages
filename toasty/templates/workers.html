@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Workers</h2>
+
+<form method="post" action="/workers/add" class="fetch-form" style="margin-bottom: 12px;">
+  <input type="text" name="name" placeholder="New worker name" required style="padding:8px; border:1px solid #ccc; border-radius:4px; min-width: 280px;" />
+  <button type="submit" style="padding:8px 12px;">Add Worker</button>
+</form>
+
+{% if workers and workers|length > 0 %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in workers %}
+      <tr>
+        <td>{{ w }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p style="margin-top:8px; color:#666;">Total workers: {{ workers|length }}</p>
+{% else %}
+<p>No workers yet. Add your first worker above.</p>
+{% endif %}
+{% endblock %}

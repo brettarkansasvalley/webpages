@@ -1,0 +1,29 @@
+{
+  "_description": "Item mix report - replicate item_mix_daily.csv",
+  "_csv_source": "item_mix_daily.csv",
+  "_feature": "explode_with_context",
+  "query": {
+    "from": {
+      "source_file": "orders_full_20251213.json",
+      "alias": "o",
+      "explode_with_context": {
+        "path": "checks.selections",
+        "aliases": ["c", "sel"],
+        "where": [
+          {"field": "sel.voided", "op": "!=", "value": true}
+        ]
+      }
+    },
+    "group_by": [
+      {"field": "sel.displayName", "alias": "item_name"}
+    ],
+    "select": [
+      {"expr": "sel.displayName", "alias": "item_name"},
+      {"expr": "sel.price", "alias": "total_sales", "agg": "sum"},
+      {"expr": "sel.guid", "alias": "quantity", "agg": "count"}
+    ],
+    "order_by": [
+      {"field": "total_sales", "direction": "desc"}
+    ]
+  }
+}

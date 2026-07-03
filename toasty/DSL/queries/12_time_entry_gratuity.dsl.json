@@ -1,0 +1,22 @@
+{
+  "_description": "Time entry gratuity summary - cash and non-cash",
+  "_csv_source": "Derived from labor_v1_timeEntries",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_timeEntries_20260130.json",
+      "alias": "te"
+    },
+    "group_by": [
+      {"field": "te.businessDate"}
+    ],
+    "select": [
+      {"expr": "te.businessDate", "alias": "date"},
+      {"expr": "sum(te.cashGratuityServiceCharges)", "alias": "total_cash_gratuity"},
+      {"expr": "sum(te.nonCashGratuityServiceCharges)", "alias": "total_non_cash_gratuity"},
+      {"expr": "sum(te.cashSales)", "alias": "total_cash_sales"},
+      {"expr": "sum(te.nonCashSales)", "alias": "total_non_cash_sales"},
+      {"expr": "sum(te.nonCashTips)", "alias": "total_non_cash_tips"},
+      {"expr": "sum(tipsWithheld)", "alias": "total_tips_withheld"}
+    ]
+  }
+}

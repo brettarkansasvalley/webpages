@@ -1,0 +1,25 @@
+{
+  "_description": "Analyze time entries by hour of day",
+  "_feature": "date_functions",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_timeEntries_20260130.json",
+      "alias": "te"
+    },
+    "where": [
+      {"field": "te.inDate", "op": "is_not_null"}
+    ],
+    "group_by": [
+      {"field": "hour(te.inDate)", "alias": "hour_of_day", "is_expr": true}
+    ],
+    "select": [
+      {"expr": "hour(te.inDate)", "alias": "hour"},
+      {"expr": "count(te.guid)", "alias": "shift_count"},
+      {"expr": "sum(te.regularHours)", "alias": "total_regular_hours"},
+      {"expr": "avg(te.regularHours)", "alias": "avg_shift_hours"}
+    ],
+    "order_by": [
+      {"field": "hour", "direction": "asc"}
+    ]
+  }
+}

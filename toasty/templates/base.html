@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ title or 'Toast Webapp' }}</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script defer src="/static/sort_filter.js"></script>
+  <script defer src="/static/app.js"></script>
+  <script defer src="/static/osk.js"></script>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <a href="/">Home</a>
+      <a href="/reports">Data</a>
+      
+      <a href="/server-tips">Server Tips</a>
+      <a href="/bartender-tips">Bartender Tips</a>
+      <a href="/payouts">Payouts</a>
+      <a href="/cashbox">Cashbox</a>
+      <a href="/report">Report</a>
+      <a href="/report-shifts">Shift Tips Report</a>
+      <a href="/report-payouts">Payouts Detail</a>
+      <a href="/suggest">Suggest</a>
+      <span style="flex:1"></span>
+      <button type="button" id="btn-restart" title="Restart the web server" style="margin-left:auto; background:#b36b00; color:#fff; padding:6px 10px; border:none; border-radius:3px; cursor:pointer;">Restart Server</button>
+      <button type="button" id="btn-shutdown" title="Shut down the web server" style="margin-left:8px; background:#b71c1c; color:#fff; padding:6px 10px; border:none; border-radius:3px; cursor:pointer;">Shutdown</button>
+    </nav>
+  </header>
+  <div id="modal" class="modal" hidden>
+    <div id="modal-box" class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 id="modal-title">Status</h3>
+      <div id="modal-message" class="modal-content"></div>
+      <div class="modal-actions">
+        <button id="modal-close" type="button">Close</button>
+        <a href="/reports" class="btn-link">View reports</a>
+      </div>
+    </div>
+  </div>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <!-- Global On-Screen Keyboard Container -->
+  <div id="osk" aria-hidden="true" class="osk" hidden>
+    <div class="osk-wrap">
+      <div class="osk-keys" role="group" aria-label="On-screen keyboard"></div>
+      <div class="osk-actions">
+        <button type="button" class="osk-btn osk-clear" data-key="clear" aria-label="Clear">Clear</button>
+        <button type="button" class="osk-btn osk-back" data-key="back" aria-label="Backspace">⌫</button>
+        <button type="button" class="osk-btn osk-done" data-key="done" aria-label="Done">Done</button>
+      </div>
+    </div>
+  </div>
+</body>
+<script>
+(function(){
+  function ready(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+  ready(function(){
+    const btn = document.getElementById('btn-restart');
+    const btnDown = document.getElementById('btn-shutdown');
+    if (!btn) return;
+    btn.addEventListener('click', async function(){
+      if (!confirm('Restart the server now? Active users will be disconnected.')) return;
+      const pwd = prompt('Enter admin password to restart:');
+      if (pwd === null) return;
+      try {
+        const body = new URLSearchParams();
+        body.set('admin_password', pwd);
+        const resp = await fetch('/admin/restart', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        let data = {};
+        try { data = await resp.json(); } catch(_){ }
+        if (resp.ok) {
+          alert('Server restarting... This page will reload shortly.');
+          setTimeout(function(){ location.reload(); }, 5000);
+        } else {
+          alert('Restart failed: ' + (data.error || resp.statusText));
+        }
+      } catch (e) {
+        alert('Restart request failed: ' + e);
+      }
+    });
+    if (btnDown) {
+      btnDown.addEventListener('click', async function(){
+        if (!confirm('Shut down the server now? You will need to start it again manually.')) return;
+        const pwd = prompt('Enter admin password to shutdown:');
+        if (pwd === null) return;
+        try {
+          const body = new URLSearchParams();
+          body.set('admin_password', pwd);
+          const resp = await fetch('/admin/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+          let data = {};
+          try { data = await resp.json(); } catch(_){ }
+          if (resp.ok) {
+            alert('Server shutting down...');
+            setTimeout(function(){ location.reload(); }, 2000);
+          } else {
+            alert('Shutdown failed: ' + (data.error || resp.statusText));
+          }
+        } catch (e) {
+          alert('Shutdown request failed: ' + e);
+        }
+      });
+    }
+  });
+})();
+</script>
+</html>

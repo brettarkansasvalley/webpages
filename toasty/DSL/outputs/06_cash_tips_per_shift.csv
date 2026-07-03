@@ -1,0 +1,5 @@
+date,employee_guid,employee_first_name,employee_last_name,job_title,start_time_utc,end_time_utc,declared_cash_tips
+20260130,5eb74ca0-b2f4-4186-92d7-fbf89d389ee1,Carla,Lupardis,AM Sunset Server,2026-01-30T15:43:11.197+0000,2026-01-30T21:33:29.215+0000,0.0
+20260130,6616e563-7186-4501-93e5-6e2f3e976022,Mary,Widaman,AM Sunset Server,2026-01-30T16:01:55.850+0000,2026-01-30T21:37:35.258+0000,0.0
+20260130,358cb5d5-66c3-46a8-840e-ed0fff717402,Amber,Stone,AM Bar Sunset,2026-01-30T16:31:33.686+0000,2026-01-30T21:35:27.415+0000,0.0
+20260130,88f963d0-1cc5-4243-943f-9f451d8ec715,AM,Bar,AM Bar Sunset,2026-01-30T16:50:04.262+0000,2026-01-30T21:24:03.888+0000,0.0

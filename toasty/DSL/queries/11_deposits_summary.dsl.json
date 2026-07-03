@@ -1,0 +1,20 @@
+{
+  "_description": "Cash deposits summary",
+  "_csv_source": "cash_summary_daily.csv (deposits portion)",
+  "query": {
+    "from": {
+      "source_file": "cashmgmt_v1_deposits_20260130.json",
+      "alias": "d"
+    },
+    "select": [
+      {"expr": "d.guid", "alias": "deposit_guid"},
+      {"expr": "d.amount", "alias": "amount"},
+      {"expr": "d.depositDate", "alias": "deposit_date"},
+      {"expr": "d.depositType", "alias": "deposit_type"},
+      {"expr": "d.approver.guid", "alias": "approver_guid"}
+    ],
+    "order_by": [
+      {"field": "d.depositDate", "direction": "desc"}
+    ]
+  }
+}

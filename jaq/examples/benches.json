@@ -1,0 +1,27 @@
+{"name": "upto"         ,"n":    8192}
+{"name": "reduce-update","n":   16384}
+{"name": "reverse"     , "n": 1048576}
+{"name": "sort"        , "n": 1048576}
+{"name": "group-by"    , "n": 1048576}
+{"name": "min-max"     , "n": 1048576}
+{"name": "add"         , "n": 1048576}
+{"name": "kv"          , "n":  131072}
+{"name": "kv-update"   , "n":  131072}
+{"name": "kv-entries"  , "n":  131072}
+{"name": "ex-implode"  , "n": 1048576}
+{"name": "reduce"      , "n": 1048576}
+{"name": "try-catch"   , "n": 1048576}
+{"name": "repeat"      , "n": 1048576}
+{"name": "from"        , "n": 1048576}
+{"name": "last"        , "n": 1048576}
+{"name": "pyramid"     , "n":  524288}
+{"name": "tree-contains","n":      23}
+{"name": "tree-flatten", "n":      17}
+{"name": "tree-update" , "n":      17}
+{"name": "tree-paths"  , "n":      17}
+{"name": "to-fromjson" , "n":   65536}
+{"name": "ack"         , "n":       7}
+{"name": "range-prop"  , "n":     128}
+{"name": "cumsum"      , "n": 1048576}
+{"name": "cumsum-xy"   , "n": 1048576}
+{"name": "str-slice"   , "n":    8192}

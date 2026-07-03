@@ -1,0 +1,43 @@
+{
+  "_description": "Calculate hours worked per shift using date_diff",
+  "_feature": "date_functions",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_timeEntries_20260130.json",
+      "alias": "te"
+    },
+    "joins": [
+      {
+        "source": {
+          "source_file": "labor_v1_employees.json",
+          "alias": "emp"
+        },
+        "on": {
+          "left": "te.employeeReference.guid",
+          "right": "emp.guid"
+        },
+        "join_type": "left",
+        "skip_nulls": true
+      }
+    ],
+    "where": [
+      {"field": "te.inDate", "op": "is_not_null"},
+      {"field": "te.outDate", "op": "is_not_null"}
+    ],
+    "select": [
+      {"expr": "te.guid", "alias": "shift_guid"},
+      {"expr": "te.businessDate", "alias": "date"},
+      {"expr": "emp.firstName", "alias": "first_name"},
+      {"expr": "emp.lastName", "alias": "last_name"},
+      {"expr": "te.inDate", "alias": "clock_in"},
+      {"expr": "te.outDate", "alias": "clock_out"},
+      {"expr": "date_diff(te.outDate, te.inDate, 'hours')", "alias": "hours_worked"},
+      {"expr": "hour(te.inDate)", "alias": "start_hour"},
+      {"expr": "hour(te.outDate)", "alias": "end_hour"}
+    ],
+    "order_by": [
+      {"field": "te.inDate", "direction": "desc"}
+    ],
+    "limit": 100
+  }
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Toasty Webapp Flask API (port 5000)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/new_toasty/toasty/webapp
+ExecStart=/home/ubuntu/new_toasty/toasty/webapp/start_api.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

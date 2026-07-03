@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Orders Report</h2>
+  <p>
+    <a href="/reports">← Reports</a>
+  </p>
+  <input id="tableFilter" class="filter-input" placeholder="Filter..." oninput="filterTable()" />
+  <div class="table-wrap">
+    <table class="sortable filterable" id="reportTable">
+      <thead>
+        <tr>
+          {% for h in headers %}
+            <th data-key="{{ h }}">{{ h }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            {% for h in headers %}
+              <td>{{ row[h] }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

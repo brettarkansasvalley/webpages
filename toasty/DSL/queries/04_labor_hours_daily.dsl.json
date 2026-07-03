@@ -1,0 +1,30 @@
+{
+  "_description": "Replicate labor_hours_daily.csv - Aggregate labor hours by employee per day",
+  "_csv_source": "labor_hours_daily.csv",
+  "_csv_columns": "date,employee_guid,employee_name,shifts_count,hours_total",
+  "query": {
+    "from": {
+      "source_file": "labor_v1_timeEntries_20260130.json",
+      "alias": "te"
+    },
+    "where": [
+      {"field": "te.inDate", "op": "is_not_null"},
+      {"field": "te.outDate", "op": "is_not_null"}
+    ],
+    "group_by": [
+      {"field": "te.businessDate"},
+      {"field": "te.employeeReference.guid"}
+    ],
+    "select": [
+      {"expr": "te.businessDate", "alias": "date"},
+      {"expr": "te.employeeReference.guid", "alias": "employee_guid"},
+      {"expr": "count(te.guid)", "alias": "shifts_count"},
+      {"expr": "sum(te.regularHours)", "alias": "regular_hours_total"},
+      {"expr": "sum(te.overtimeHours)", "alias": "overtime_hours_total"}
+    ],
+    "order_by": [
+      {"field": "te.businessDate", "direction": "desc"},
+      {"field": "te.employeeReference.guid", "direction": "asc"}
+    ]
+  }
+}

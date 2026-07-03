@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Cashbox</h2>
+<style>
+  /* Compact, wrap-friendly tables for small screens */
+  .table-wrap table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+  .table-wrap th, .table-wrap td { padding: 6px; vertical-align: top; white-space: normal; word-break: break-word; }
+  /* Balances table widths */
+  section:first-of-type .table-wrap thead tr th:nth-child(1) { width: 60%; }
+  section:first-of-type .table-wrap thead tr th:nth-child(2) { width: 40%; }
+  /* Ledger entries table widths */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(1) { width: 14%; } /* Timestamp */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(2) { width: 10%; } /* Drawer */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(3) { width: 14%; } /* Worker */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(4) { width: 16%; } /* Reason */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(5) { width: 9%; }  /* Amount */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(6) { width: 9%; }  /* Submit ID */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(7) { width: 12%; } /* Payout Session */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(8) { width: 8%; }  /* Business Date */
+  section:nth-of-type(2) .table-wrap thead tr th:nth-child(9) { width: 8%; }  /* Bucket */
+  /* Filter input responsive width */
+  #tableFilter { width: min(100%, 360px); }
+</style>
+
+<form method="get" action="/cashbox" style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+  <label for="drawer">Drawer:</label>
+  <select id="drawer" name="drawer" onchange="this.form.submit()">
+    {% for d in drawer_options %}
+      <option value="{{ '' if d == 'All' else d }}" {% if selected_drawer == d %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <label for="start_date">Start:</label>
+  <input id="start_date" type="date" name="start_date" value="{{ start_date }}">
+  <label for="end_date">End:</label>
+  <input id="end_date" type="date" name="end_date" value="{{ end_date }}">
+  <label for="limit">Rows:</label>
+  <input id="limit" type="number" name="limit" value="{{ limit }}" min="10" max="10000" step="10">
+  <button type="submit">Apply</button>
+</form>
+
+<section>
+  <h3>Balances by Drawer</h3>
+  <div class="table-wrap">
+    <table class="sortable">
+      <thead>
+        <tr>
+          <th>Drawer</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d, total in balances.items() %}
+        <tr>
+          <td>{{ d }}</td>
+          <td>{{ '%.2f'|format(total) }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td><strong>ALL</strong></td>
+          <td><strong>{{ '%.2f'|format(total_all) }}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section style="margin-top: 1rem;">
+  <h3>Recent Ledger Entries {% if selected_drawer and selected_drawer != 'All' %}for {{ selected_drawer }}{% endif %}</h3>
+  <input id="tableFilter" type="text" placeholder="Filter table..." style="margin-bottom: 0.5rem; width: 300px;"/>
+  <div class="table-wrap">
+    <table class="sortable filterable">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Drawer</th>
+          <th>Worker</th>
+          <th>Reason</th>
+          <th>Amount</th>
+          <th>Submit ID</th>
+          <th>Payout Session</th>
+          <th>Business Date</th>
+          <th>Bucket</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in entries %}
+        <tr>
+          <td><div>{{ r.timestamp[:10] }}</div><div>{{ r.timestamp[11:19] }}</div></td>
+          <td>{{ r.drawer }}</td>
+          <td>{{ r.worker }}</td>
+          <td>
+            {% set reason_txt = r.reason or '' %}
+            {% set rendered = reason_txt|replace(' - ', ' - <br/>', 1) %}
+            {% if rendered == reason_txt %}
+              {% set rendered = reason_txt|replace('-', '-<br/>', 1) %}
+            {% endif %}
+            <span>{{ rendered|safe }}</span>
+          </td>
+          <td>{{ '%.2f'|format(r.amount) }}</td>
+          <td>{{ r.submit_id or '' }}</td>
+          <td>{{ r.payout_session_id or '' }}</td>
+          <td>{{ r.business_date or '' }}</td>
+          <td>{{ r.bucket or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

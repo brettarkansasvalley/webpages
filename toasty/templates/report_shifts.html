@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Shift Tips Report</h2>
+
+<form method="get" action="/report-shifts" style="margin-bottom: 10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+  <label>Start: <input type="date" name="start_date" value="{{ start_date or '' }}" /></label>
+  <label>End: <input type="date" name="end_date" value="{{ end_date or '' }}" /></label>
+  <label>Worker: <input type="text" name="worker" value="{{ worker or '' }}" placeholder="Filter worker" /></label>
+  <label>Job Title: <input type="text" name="job_title" value="{{ job_title or '' }}" placeholder="Filter job title" /></label>
+  <label>Rows: <input type="number" name="limit" value="{{ rows|length }}" min="10" max="10000" step="10" /></label>
+  <button type="submit">Apply</button>
+  <input id="tableFilter" type="text" placeholder="Filter table..." style="margin-left: 1rem; width: 300px;" />
+  <span style="opacity: 0.7;">Showing {{ rows|length }} rows</span>
+</form>
+
+<div class="table-wrap">
+  <table class="sortable filterable">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Worker</th>
+        <th>Job Title</th>
+        <th>Cash Tips</th>
+        <th>Non-Cash Tips</th>
+        <th>Gratuity</th>
+        <th>Net Sales</th>
+        <th>Tips Paid Out</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.date }}</td>
+        <td>{{ r.employee_name }}</td>
+        <td>{{ r.job_title }}</td>
+        <td>{{ '%.2f'|format(r.cash_tips or 0) }}</td>
+        <td>{{ '%.2f'|format(r.noncash_tips or 0) }}</td>
+        <td>{{ '%.2f'|format(r.gratuity or 0) }}</td>
+        <td>{{ '%.2f'|format(r.net_sales or 0) }}</td>
+        <td>{{ '%.2f'|format(r.tips_paid_out or 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

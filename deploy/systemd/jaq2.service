@@ -1,0 +1,16 @@
+[Unit]
+Description=JAQ2 JSON Loader Server (Port 3001)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/jaq2/jaq/json-loader-server
+ExecStart=/home/ubuntu/jaq2/jaq/target/release/json-loader-server
+Restart=always
+RestartSec=3
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

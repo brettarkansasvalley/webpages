@@ -1,0 +1,14 @@
+{
+  "_description": "List of order GUIDs available (reference only, not full order data)",
+  "_note": "Full order data is available in /data/raw/orders/YYYY-MM-DD.json files",
+  "query": {
+    "from": {
+      "source_file": "orders_v2_orders_20260130.json",
+      "alias": "order_guid"
+    },
+    "select": [
+      {"expr": "order_guid", "alias": "guid"}
+    ],
+    "limit": 100
+  }
+}
