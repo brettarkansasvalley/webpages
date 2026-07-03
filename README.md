@@ -38,18 +38,14 @@ json-loader-server (custom JSON database, Rust/axum + rusqlite + jaq query engin
 | `deploy/nginx/reverse_proxy` | `/etc/nginx/sites-enabled/reverse_proxy` | Live nginx site config (note: `sites-available/` copy on the server is stale/different) |
 | `deploy/systemd/` | `/etc/systemd/system/` | `webapp5000.service`, `jaq.service`, `jaq2.service` |
 
-## ⚠️ Secrets — resolve before pushing to GitHub
+## Secrets — resolved (2026-07-03)
 
-Seven files contain hardcoded credentials and are **held out of git via `.gitignore`**
-(they are still present in this folder on disk):
-
-- `toasty/start.sh`, `toasty/get_toast.py`, `toasty/webapp/start_api.sh` — Toast API `CLIENT_SECRET` (+ client id, restaurant GUID)
-- `toasty/fetch_date_range.py`, `toasty/toast_30d_report.py` — same Toast `CLIENT_SECRET` as an `os.getenv(...)` fallback default
-- `toasty/jbhooks/send_email.py`, `toasty/jbhooks/send_fixed_period_report.py` — Gmail app password
-
-To include them: move the credentials into environment variables / an untracked `.env`,
-then remove the entries from `.gitignore`. Until then the repo is safe to push even public.
-`toasty/webapp/.env` (same Toast credentials) was deliberately not copied here.
+All credentials were migrated out of code into `.env` files (gitignored). The seven
+formerly hardcoded files (`start.sh`, `get_toast.py`, `fetch_date_range.py`,
+`toast_30d_report.py`, `webapp/start_api.sh`, `jbhooks/send_email.py`,
+`jbhooks/send_fixed_period_report.py`) now read from the environment, loading
+`toasty/.env` (and `webapp/.env` for the webapp). See `toasty/.env.example` for the
+required keys. On a fresh deploy: copy `.env.example` to `.env` and fill in values.
 
 ## Not included (runtime data / rebuildable)
 

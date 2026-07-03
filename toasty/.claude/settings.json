@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && git add -A >/dev/null 2>&1 && { git diff --cached --quiet || git commit -q -m \"checkpoint: $(date '+%Y-%m-%d %H:%M:%S')\"; } >/dev/null 2>&1 || true",
+            "timeout": 60,
+            "statusMessage": "Creating git checkpoint..."
+          }
+        ]
+      }
+    ]
+  }
+}

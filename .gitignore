@@ -1,16 +1,11 @@
 # ============================================================
-# SECRETS — these files exist in this folder but contain
-# hardcoded credentials (Toast API client secret, Gmail app
-# password). They are held OUT of git until the credentials
-# are moved to environment variables / .env. See README.md.
+# SECRETS — all credentials now live in .env files (see
+# toasty/.env.example); the former hardcoded-credential files
+# were scrubbed on 2026-07-03 and are tracked normally.
 # ============================================================
-toasty/start.sh
-toasty/get_toast.py
-toasty/webapp/start_api.sh
-toasty/jbhooks/send_email.py
-toasty/jbhooks/send_fixed_period_report.py
 .env
 *.env
+!.env.example
 .htpasswd*
 
 # Runtime data & databases (never commit — webapp.db alone is 53 GB)
