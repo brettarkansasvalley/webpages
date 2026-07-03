@@ -4105,11 +4105,15 @@ async function loadAutoFetchStatus() {
             return;
         }
         if (typeof data.interval_minutes === 'number' && data.interval_minutes > 0) {
-            autoEl.textContent = `Every ${data.interval_minutes} minutes`;
+            autoEl.textContent = `Every ${data.interval_minutes} minutes (full sweep)`;
         } else if (typeof data.interval_hours === 'number' && data.interval_hours > 0) {
-            autoEl.textContent = `Every ${data.interval_hours} hours`;
+            autoEl.textContent = `Every ${data.interval_hours} hours (full sweep)`;
         } else {
             autoEl.textContent = 'Enabled';
+        }
+        const fast = data.fast_fetch || {};
+        if (fast.enabled && typeof fast.interval_minutes === 'number' && fast.interval_minutes > 0) {
+            autoEl.textContent += ` · every ${fast.interval_minutes} min (recent days)`;
         }
 
         const labor = data.labor_watch || {};
@@ -4132,6 +4136,55 @@ async function loadAutoFetchStatus() {
         autoEl.textContent = 'Unavailable';
         if (laborEl) laborEl.textContent = 'Unavailable';
         if (laborLastEl) laborLastEl.textContent = 'Unavailable';
+    }
+}
+
+async function triggerFetchNow() {
+    const btn = document.getElementById('fetchNowBtn');
+    const statusEl = document.getElementById('fetchNowStatus');
+    if (btn) btn.loading = true;
+    if (statusEl) statusEl.textContent = 'Starting fetch...';
+    try {
+        const response = await fetch(`${LOCAL_API}/admin/auto-fetch/trigger`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lookback_days: 1 })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || data.error || 'Failed to start fetch');
+        }
+        if (statusEl) {
+            statusEl.textContent = data.already_running
+                ? 'A fetch is already running — waiting for it to finish...'
+                : 'Fetching latest data from Toast...';
+        }
+
+        // Poll status until the run completes, then confirm.
+        const startedAt = Date.now();
+        const poll = setInterval(async () => {
+            try {
+                const resp = await fetch(`${LOCAL_API}/admin/auto-fetch/status`);
+                const status = await resp.json();
+                if (!status.running && Date.now() - startedAt > 4000) {
+                    clearInterval(poll);
+                    if (btn) btn.loading = false;
+                    const secs = Math.round((Date.now() - startedAt) / 1000);
+                    if (statusEl) statusEl.textContent = `Done — data refreshed (${secs}s). Reload the page you were on.`;
+                    showToast('Toast data refreshed', 'success');
+                } else if (Date.now() - startedAt > 10 * 60 * 1000) {
+                    clearInterval(poll);
+                    if (btn) btn.loading = false;
+                    if (statusEl) statusEl.textContent = 'Still running in background — check back shortly.';
+                }
+            } catch (e) {
+                // keep polling; transient errors are fine
+            }
+        }, 4000);
+    } catch (error) {
+        if (btn) btn.loading = false;
+        if (statusEl) statusEl.textContent = `Error: ${error.message}`;
+        showToast(`Fetch failed: ${error.message}`, 'danger');
     }
 }
 

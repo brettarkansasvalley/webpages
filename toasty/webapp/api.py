@@ -1014,6 +1014,9 @@ def get_db():
     """Get database connection."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # Wait for concurrent writers (background fetch jobs) instead of
+    # failing immediately with "database is locked".
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 
@@ -1422,6 +1425,8 @@ def get_split_assigned_main_figures(worker_name: str, date_str: str) -> Dict[str
             check_cash_tips = 0.0
             check_credit_tips = 0.0
             for payment in check.get('payments', []) or []:
+                if is_payment_voided(payment):
+                    continue
                 tip = float(payment.get('tipAmount', 0) or 0)
                 payment_type = (payment.get('type') or '').upper()
                 if payment_type == 'CASH':
@@ -2152,6 +2157,22 @@ def load_orders_for_date(date_str: str) -> List[Dict]:
         return []
 
 
+# Toast payment statuses that never collected money; such payments must not
+# count toward tips, cash collected, or sales.
+UNCOLLECTED_PAYMENT_STATUSES = {
+    'VOIDED', 'PROCESSING_VOID', 'VOIDED_AT_RISK',
+    'DENIED', 'CANCELLED', 'ERROR', 'ERROR_NETWORK',
+}
+
+
+def is_payment_voided(payment) -> bool:
+    """True if a Toast payment was voided/denied and collected no money."""
+    if not isinstance(payment, dict):
+        return True
+    status = str(payment.get('paymentStatus') or '').upper()
+    return status in UNCOLLECTED_PAYMENT_STATUSES
+
+
 def calculate_tips_from_orders(worker_name: str, date_str: str) -> Dict:
     """Calculate tips from Toast orders for a specific worker on a date.
     
@@ -2229,8 +2250,10 @@ def calculate_tips_from_orders(worker_name: str, date_str: str) -> Dict:
                 has_cash_payment = False
                 has_non_cash_payment = False
                 cash_payment_rows: List[tuple[float, float]] = []  # (amount, tip)
-                
+
                 for payment in check.get('payments', []):
+                    if is_payment_voided(payment):
+                        continue
                     tip = float(payment.get('tipAmount', 0) or 0)
                     payment_type_raw = (
                         payment.get('type')
@@ -2773,9 +2796,13 @@ def import_orders_for_date(date_str: str) -> Dict:
     if not orders:
         stats['errors'].append(f"No order data found for {date_str}")
         return stats
-    
+
     conn = get_db()
     cursor = conn.cursor()
+
+    # check_items has no unique key, so re-imports must replace the date's
+    # rows instead of appending (this table once grew to 175M duplicate rows).
+    cursor.execute("DELETE FROM check_items WHERE business_date = ?", (date_str,))
     
     try:
         for order_idx, order in enumerate(orders):
@@ -2911,11 +2938,10 @@ def import_orders_for_date(date_str: str) -> Dict:
                         category_name = classify_selection_category(item_name, category_guid, sales_cat_map)
                         
                         cursor.execute("""
-                            INSERT INTO check_items 
+                            INSERT INTO check_items
                             (check_guid, order_guid, business_date, item_guid, item_name,
                              category_name, category_guid, quantity, unit_price, total_price, is_voided)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ON CONFLICT DO NOTHING
                         """, (check_guid, order_guid, date_str, item_guid, item_name,
                               category_name, category_guid, quantity, price, total_price, is_voided))
                         
@@ -3160,6 +3186,8 @@ def calculate_bartender_defaults(date_str, bucket):
                         
                         # Aggregate tips from all payments on checks owned by the bar order.
                         for payment in check.get('payments', []):
+                            if is_payment_voided(payment):
+                                continue
                             tip_amt = float(payment.get('tipAmount') or payment.get('tips') or payment.get('gratuityTipAmount') or 0.0)
                             pay_type_raw = payment.get('paymentType') or payment.get('type') or payment.get('tenderType') or ''
                             if isinstance(pay_type_raw, dict):
@@ -5052,6 +5080,8 @@ def calculate_category_breakdown(worker_name: str, date_str: str, bucket: str) -
             for payment in check.get('payments', []):
                 if not isinstance(payment, dict):
                     continue
+                if is_payment_voided(payment):
+                    continue
                 tip_amount = float(payment.get('tipAmount', 0) or 0)
                 total_payment_tips += tip_amount * share
             
@@ -5353,6 +5383,8 @@ def get_server_orders():
             non_cash_tips = 0.0
             for payment in check.get('payments', []):
                 if not isinstance(payment, dict):
+                    continue
+                if is_payment_voided(payment):
                     continue
                 payment_type = (payment.get('type') or '').upper()
                 tip_amt = float(payment.get('tipAmount', 0) or 0)
@@ -7080,6 +7112,8 @@ def get_suggestions():
                     
                     for check in order.get('checks', []):
                         for payment in check.get('payments', []):
+                            if is_payment_voided(payment):
+                                continue
                             tip_amount = float(payment.get('tipAmount') or 0)
                             if tip_amount <= 0:
                                 continue
@@ -7905,10 +7939,11 @@ def sync_to_jaq_api():
 # AUTO-FETCH SCHEDULER
 # ====================
 
-def auto_fetch_and_sync():
+def auto_fetch_and_sync(lookback_days=None):
     """Background job to fetch all endpoints from Toast and sync orders to database.
-    
-    Runs every hour to keep data fresh.
+
+    lookback_days: trailing days to fetch; None uses TOAST_AUTO_FETCH_DAYS (default 30).
+    Scheduled runs: full sweep every 30 min, fast recent-days lane every few minutes.
     """
     import sys
     import logging
@@ -7930,7 +7965,8 @@ def auto_fetch_and_sync():
         
         # Calculate date range: trailing N days to now (default 30)
         end_date = datetime.now()
-        lookback_days = int(os.getenv('TOAST_AUTO_FETCH_DAYS', '30'))
+        if lookback_days is None:
+            lookback_days = int(os.getenv('TOAST_AUTO_FETCH_DAYS', '30'))
         start_date = end_date - timedelta(days=lookback_days)
         
         start_date_str = start_date.strftime('%Y-%m-%d')
@@ -8247,6 +8283,37 @@ def auto_fetch_and_sync():
         logger.exception("CRITICAL ERROR in auto-fetch job")
 
 
+import threading
+from functools import partial
+
+# Guard so overlapping fetch runs (fast lane, full sweep, manual trigger)
+# never execute concurrently.
+_AUTO_FETCH_LOCK = threading.Lock()
+_auto_fetch_state = {
+    "running": False,
+    "last_started_at": None,
+    "last_completed_at": None,
+    "last_lookback_days": None,
+}
+
+
+def run_auto_fetch(lookback_days=None):
+    """Run auto_fetch_and_sync unless a fetch is already in progress."""
+    if not _AUTO_FETCH_LOCK.acquire(blocking=False):
+        print(f"[{datetime.now()}] Auto-fetch already running; skipping run (lookback_days={lookback_days})")
+        return False
+    _auto_fetch_state["running"] = True
+    _auto_fetch_state["last_started_at"] = datetime.now(timezone.utc).isoformat()
+    _auto_fetch_state["last_lookback_days"] = lookback_days
+    try:
+        auto_fetch_and_sync(lookback_days=lookback_days)
+        return True
+    finally:
+        _auto_fetch_state["running"] = False
+        _auto_fetch_state["last_completed_at"] = datetime.now(timezone.utc).isoformat()
+        _AUTO_FETCH_LOCK.release()
+
+
 def _labor_watch_dates(num_days: int = 3) -> List[str]:
     """Business dates (YYYY-MM-DD) to include in labor-watch snapshots."""
     today = datetime.now().date()
@@ -8418,14 +8485,27 @@ def labor_watch_and_sync():
 # Initialize scheduler
 scheduler = BackgroundScheduler(daemon=True)
 
-# Add job to run every 30 minutes
+# Full sweep: re-fetch the whole lookback window (default 30 days) every 30 minutes
 scheduler.add_job(
-    func=auto_fetch_and_sync,
+    func=run_auto_fetch,
     trigger=IntervalTrigger(minutes=30),
     id='auto_fetch_job',
     name='Auto Fetch Toast Data',
     replace_existing=True
 )
+
+# Fast lane: fetch only the most recent day(s) so edits made in Toast show up
+# within minutes. Set TOAST_FAST_FETCH_MINUTES=0 to disable.
+fast_fetch_minutes = int(os.getenv('TOAST_FAST_FETCH_MINUTES', '5'))
+fast_fetch_days = int(os.getenv('TOAST_FAST_FETCH_DAYS', '1'))
+if fast_fetch_minutes > 0:
+    scheduler.add_job(
+        func=partial(run_auto_fetch, lookback_days=fast_fetch_days),
+        trigger=IntervalTrigger(minutes=fast_fetch_minutes),
+        id='auto_fetch_fast_job',
+        name='Fast Fetch Recent Toast Data',
+        replace_existing=True
+    )
 
 # Add labor-watch job (default every 1 minute, configurable).
 labor_watch_interval_minutes = get_labor_watch_interval_minutes(1)
@@ -8444,17 +8524,33 @@ print(f"[{datetime.now()}] Labor-watch scheduler started - runs every {labor_wat
 
 @app.route('/api/admin/auto-fetch/trigger', methods=['POST'])
 def trigger_auto_fetch():
-    """Manually trigger the auto-fetch job."""
+    """Manually trigger the auto-fetch job.
+
+    Optional JSON body: {"lookback_days": N} to fetch only the last N days
+    (fast). Omit for a full-lookback fetch.
+    """
     try:
+        data = request.get_json(silent=True) or {}
+        lookback_days = data.get('lookback_days')
+        if lookback_days is not None:
+            lookback_days = max(1, int(lookback_days))
+
+        if _auto_fetch_state["running"]:
+            return jsonify({
+                "success": True,
+                "already_running": True,
+                "message": "A fetch is already in progress"
+            })
+
         # Run in background thread so we don't block the response
-        import threading
-        thread = threading.Thread(target=auto_fetch_and_sync)
+        thread = threading.Thread(target=run_auto_fetch, kwargs={"lookback_days": lookback_days})
         thread.daemon = True
         thread.start()
-        
+
         return jsonify({
             "success": True,
-            "message": "Auto-fetch job started in background",
+            "already_running": False,
+            "message": f"Fetch started in background (lookback: {lookback_days if lookback_days else 'full'} days)",
             "check_logs": "Check server logs for progress"
         })
     except Exception as e:
@@ -8475,12 +8571,23 @@ def get_auto_fetch_status():
         next_run = job.next_run_time
         labor_next_run = labor_job.next_run_time if labor_job else None
         labor_interval = get_labor_watch_interval_minutes(1)
+        fast_job = scheduler.get_job('auto_fetch_fast_job')
+        fast_next_run = fast_job.next_run_time if fast_job else None
         return jsonify({
             "enabled": True,
             "interval_minutes": 30,
             "next_run": next_run.isoformat() if next_run else None,
             "job_id": job.id,
             "job_name": job.name,
+            "running": _auto_fetch_state["running"],
+            "last_started_at": _auto_fetch_state["last_started_at"],
+            "last_completed_at": _auto_fetch_state["last_completed_at"],
+            "fast_fetch": {
+                "enabled": fast_job is not None,
+                "interval_minutes": int(os.getenv('TOAST_FAST_FETCH_MINUTES', '5')),
+                "lookback_days": int(os.getenv('TOAST_FAST_FETCH_DAYS', '1')),
+                "next_run": fast_next_run.isoformat() if fast_next_run else None,
+            },
             "labor_watch": {
                 "enabled": labor_job is not None,
                 "interval_minutes": labor_interval,

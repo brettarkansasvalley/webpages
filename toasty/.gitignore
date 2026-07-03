@@ -1,0 +1,26 @@
+# Huge runtime databases & data lakes — never commit (webapp.db alone is 53 GB)
+*.db
+*.db.*
+*.db-wal
+*.db-shm
+*.sqlite
+/data/
+/toasty/
+/webapp_backup/
+.venv/
+venv/
+
+# Secrets file (passwords will move here; keep out of git)
+.env
+*.env
+
+# Logs, pids, caches, build output
+*.log
+*.pid
+__pycache__/
+*.pyc
+node_modules/
+.ruff_cache/
+
+# Session helper — appended on every Claude session exit, too noisy for history
+resume.txt

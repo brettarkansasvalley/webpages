@@ -1583,6 +1583,13 @@
                         <strong>Auto-fetch interval:</strong>
                         <span id="autoFetchIntervalValue">Loading...</span>
                     </div>
+                    <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <sl-button variant="success" id="fetchNowBtn" onclick="triggerFetchNow()">
+                            <sl-icon slot="prefix" name="lightning-charge"></sl-icon>
+                            Fetch Now from Toast
+                        </sl-button>
+                        <span id="fetchNowStatus" style="color: #555; font-size: 0.92rem;"></span>
+                    </div>
                     <div style="margin-top: 8px; color: #555; font-size: 0.92rem;">
                         <strong>Labor watch interval:</strong>
                         <span id="laborWatchIntervalValue">Loading...</span>
