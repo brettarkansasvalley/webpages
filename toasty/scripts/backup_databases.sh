@@ -28,4 +28,26 @@ backup_db /home/ubuntu/new_toasty/toasty/tip_distribution.db
 # Drop daily folders older than KEEP_DAYS
 find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +"$KEEP_DAYS" -exec rm -rf {} +
 
+# --- Off-box copy: force-push latest snapshot to GitHub branch db-backups ---
+# Single amended commit so the branch never accumulates history; local
+# 14-day rotation above remains the point-in-time archive.
+GH_REMOTE="git@github.com:brettarkansasvalley/webpages.git"
+GH_DIR="$BACKUP_ROOT/github-mirror"
+if [[ ! -d "$GH_DIR/.git" ]]; then
+  git init -q -b db-backups "$GH_DIR"
+  git -C "$GH_DIR" remote add origin "$GH_REMOTE"
+  git -C "$GH_DIR" config user.name "toasty-backup"
+  git -C "$GH_DIR" config user.email "backup@zucklakeapp"
+  printf 'Nightly gzipped SQLite backups (latest only; older copies live on the server in /home/ubuntu/db_backups/).\n' > "$GH_DIR/README.md"
+fi
+cp "$DEST"/*.gz "$GH_DIR/"
+git -C "$GH_DIR" add -A
+if git -C "$GH_DIR" rev-parse HEAD >/dev/null 2>&1; then
+  git -C "$GH_DIR" commit -q --amend -m "DB backup $STAMP"
+else
+  git -C "$GH_DIR" commit -q -m "DB backup $STAMP"
+fi
+git -C "$GH_DIR" push -q -f origin db-backups
+echo "[backup] pushed snapshot to GitHub branch db-backups"
+
 echo "[backup] complete: $(date '+%Y-%m-%d %H:%M:%S')"
